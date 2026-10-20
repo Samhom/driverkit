@@ -5,10 +5,9 @@ import java.util.function.Consumer;
 
 /** Gated subscription ownership keeps platform callbacks and detachment out of state locks. */
 final class ConfigurationBinding<S> {
-  private final AtomicBoolean enabled = new AtomicBoolean(true), closing = new AtomicBoolean();
+  private final AtomicBoolean enabled = new AtomicBoolean(true);
   private final Object gate = new Object();
   private final LifecycleCoordinator.Owned<AutoCloseable> ownership;
-  private final Consumer<Throwable> completion;
 
   ConfigurationBinding(
       LifecycleCoordinator lifecycle,
@@ -16,7 +15,6 @@ final class ConfigurationBinding<S> {
       Consumer<ConfigSnapshot<S>> listener,
       ClientPolicy policy,
       Consumer<Throwable> completion) {
-    this.completion = completion;
     FactoryAdapter<AutoCloseable, ConfigurationSource<S>> adapter =
         new FactoryAdapter<>(
             "configuration",
@@ -29,8 +27,14 @@ final class ConfigurationBinding<S> {
                     }),
             (value, remaining) -> {},
             AutoCloseable::close);
-    ownership =
-        lifecycle.initialize(adapter, source, policy.warmupTimeout(), policy.shutdownTimeout());
+    try {
+      ownership =
+          lifecycle.initialize(adapter, source, policy.warmupTimeout(), policy.shutdownTimeout());
+    } catch (RuntimeException | Error failure) {
+      if (completion != null) completion.accept(null);
+      throw failure;
+    }
+    if (completion != null) ownership.whenClosed(completion);
     try {
       ownership.awaitReady();
     } catch (RuntimeException failure) {
@@ -43,7 +47,7 @@ final class ConfigurationBinding<S> {
     synchronized (gate) {
       enabled.set(false);
     }
-    ownership.retire(deadline, closing.compareAndSet(false, true) ? completion : null);
+    ownership.retire(deadline, null);
   }
 
   boolean isClosed() {

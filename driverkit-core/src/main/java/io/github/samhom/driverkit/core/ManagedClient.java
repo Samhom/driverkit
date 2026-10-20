@@ -35,6 +35,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   private boolean closed;
   private boolean revoked;
   private int cleanupFailures;
+  private int ownedResources = 1;
   private ConfigurationBinding<S> subscription;
   private boolean bindingInProgress;
   private long closingDeadline = Long.MAX_VALUE;
@@ -71,10 +72,32 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   }
 
   private Generation create(ConfigSnapshot<S> snapshot) {
-    LifecycleCoordinator.Owned<C> ownership =
-        runtime.lifecycle.initialize(
-            adapter, snapshot.settings(), policy.warmupTimeout(), policy.shutdownTimeout());
+    LifecycleCoordinator.Owned<C> ownership;
+    try {
+      ownership =
+          runtime.lifecycle.initialize(
+              adapter, snapshot.settings(), policy.warmupTimeout(), policy.shutdownTimeout());
+    } catch (RuntimeException | Error failure) {
+      resourceFinished(null);
+      throw failure;
+    }
+    ownership.whenClosed(this::resourceFinished);
     return new Generation(snapshot, ownership.awaitReady(), ownership);
+  }
+
+  private void resourceFinished(Throwable error) {
+    synchronized (state) {
+      ownedResources--;
+      if (error != null) cleanupFailures++;
+      state.notifyAll();
+    }
+    runtime.releaseRegistration(this);
+  }
+
+  boolean canUnregister() {
+    synchronized (state) {
+      return closed && ownedResources == 0 && cleanupFailures == 0;
+    }
   }
 
   public ResourceId resource() {
@@ -94,7 +117,8 @@ public final class ManagedClient<C, S> implements AutoCloseable {
           closed,
           revoked,
           attemptedRevision,
-          rejectedUpdates);
+          rejectedUpdates,
+          ownedResources);
     }
   }
 
@@ -117,7 +141,12 @@ public final class ManagedClient<C, S> implements AutoCloseable {
           generation.client,
           generation.snapshot.revision(),
           generation.snapshot.settings(),
-          () -> release(generation));
+          () -> release(generation),
+          () -> {
+            synchronized (state) {
+              return !generation.closing && !generation.disposed;
+            }
+          });
     }
   }
 
@@ -152,11 +181,11 @@ public final class ManagedClient<C, S> implements AutoCloseable {
         deadline,
         error -> {
           synchronized (state) {
-            if (error != null) cleanupFailures++;
             generation.disposed = true;
             if (retiring == generation) retiring = null;
             state.notifyAll();
           }
+          runtime.releaseRegistration(this);
           schedulePending();
         });
   }
@@ -166,12 +195,19 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     if (!resource.equals(snapshot.resource()))
       throw new IllegalArgumentException("Configuration resource scope mismatch");
     synchronized (updateLock) {
+      S previousSettings;
       synchronized (state) {
         ensureOpen();
         if (snapshot.revision() <= attemptedRevision) return UpdateResult.STALE;
         if (retiring != null) return UpdateResult.BUSY;
-        adapter.validateUpdate(active.snapshot.settings(), snapshot.settings());
+        previousSettings = active.snapshot.settings();
+      }
+      // Validation is adapter code; it must not block close() or registry retirement's state lock.
+      adapter.validateUpdate(previousSettings, snapshot.settings());
+      synchronized (state) {
+        ensureOpen();
         attemptedRevision = snapshot.revision();
+        ownedResources++;
       }
       Generation candidate;
       try {
@@ -207,22 +243,17 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       }
       if (subscription != null || bindingInProgress)
         throw new IllegalStateException("A configuration source is already bound");
+      synchronized (state) {
+        ensureOpen();
+        ownedResources++;
+      }
       bindingInProgress = true;
     }
     ConfigurationBinding<S> candidate = null;
     try {
       candidate =
           new ConfigurationBinding<>(
-              runtime.lifecycle,
-              source,
-              this::enqueue,
-              policy,
-              error -> {
-                if (error != null)
-                  synchronized (state) {
-                    cleanupFailures++;
-                  }
-              });
+              runtime.lifecycle, source, this::enqueue, policy, this::resourceFinished);
       synchronized (this) {
         synchronized (state) {
           ensureOpen();
@@ -599,7 +630,8 @@ public final class ManagedClient<C, S> implements AutoCloseable {
 
   void awaitClose(long deadline) {
     synchronized (state) {
-      while ((!active.disposed || retiring != null) && deadline - System.nanoTime() > 0) {
+      while ((!active.disposed || retiring != null || ownedResources != 0)
+          && deadline - System.nanoTime() > 0) {
         try {
           TimeUnit.NANOSECONDS.timedWait(state, deadline - System.nanoTime());
         } catch (InterruptedException e) {
@@ -631,5 +663,6 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     beginClose(deadline);
     awaitClose(deadline);
     forceClose(deadline);
+    runtime.releaseRegistration(this);
   }
 }

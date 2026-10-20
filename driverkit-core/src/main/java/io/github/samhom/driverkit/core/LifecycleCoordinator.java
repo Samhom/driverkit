@@ -317,6 +317,10 @@ final class LifecycleCoordinator {
       return closed.isDone() && !closed.isCompletedExceptionally();
     }
 
+    void whenClosed(Consumer<Throwable> completion) {
+      closed.whenComplete((value, error) -> completion.accept(error));
+    }
+
     void awaitClosed(long deadline) throws Exception {
       closed.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
     }

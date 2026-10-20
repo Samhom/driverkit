@@ -8,6 +8,7 @@ public final class ClientStatus {
   private final boolean revoked;
   private final long attemptedRevision;
   private final long rejectedUpdates;
+  private final int ownedResources;
 
   ClientStatus(
       long revision,
@@ -16,7 +17,8 @@ public final class ClientStatus {
       boolean closed,
       boolean revoked,
       long attemptedRevision,
-      long rejectedUpdates) {
+      long rejectedUpdates,
+      int ownedResources) {
     this.revision = revision;
     this.inFlight = inFlight;
     this.retiring = retiring;
@@ -24,6 +26,7 @@ public final class ClientStatus {
     this.revoked = revoked;
     this.attemptedRevision = attemptedRevision;
     this.rejectedUpdates = rejectedUpdates;
+    this.ownedResources = ownedResources;
   }
 
   public long revision() {
@@ -52,5 +55,12 @@ public final class ClientStatus {
 
   public long rejectedUpdates() {
     return rejectedUpdates;
+  }
+
+  /**
+   * Native generations, unfinished candidates and configuration subscriptions not yet cleaned up.
+   */
+  public int ownedResources() {
+    return ownedResources;
   }
 }

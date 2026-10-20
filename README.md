@@ -112,6 +112,8 @@ source.publish(new ConfigSnapshot<>(resource, 2, replacementSettings));
 
 `handle.status()` 可查看生效版本、已尝试版本、被拒绝更新数、在途操作及退休代际数。回滚需要用更高版本重新发布先前的配置内容。
 
+单独关闭 handle 后，注册项会在原生客户端、候选及配置订阅实际清理完成后自动释放。也可调用 runtime.unregister(resource) 显式注销；清理尚未完成或失败时，资源 ID 继续保留，不能同名重建。status().ownedResources() 与 cleanupFailures() 可用于诊断；旧句柄不会影响之后重新注册的同名资源。
+
 Apollo 集成接收应用已经初始化并授权的 `Config`：
 
 ```java

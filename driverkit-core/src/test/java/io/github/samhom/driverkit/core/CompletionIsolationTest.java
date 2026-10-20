@@ -8,6 +8,28 @@ import java.util.concurrent.atomic.*;
 import org.junit.jupiter.api.Test;
 
 class CompletionIsolationTest {
+  @Test
+  void runtimeCloseFromCallbackDoesNotWaitForItsOwnDeliveryReservation() throws Exception {
+    ClientRuntime runtime = new ClientRuntime();
+    try {
+      ManagedClient<String, String> handle = register(runtime);
+      CompletableFuture<String> nativeResult = new CompletableFuture<>();
+      CompletableFuture<String> first =
+          handle.executeAsync(
+              Operation.read("get", Duration.ofSeconds(3)), (client, context) -> nativeResult);
+      CompletableFuture<String> callback =
+          first.thenApply(
+              value -> {
+                runtime.close(Duration.ofSeconds(2));
+                return value;
+              });
+      nativeResult.complete("done");
+      assertEquals("done", callback.get(1, TimeUnit.SECONDS));
+    } finally {
+      runtime.close(Duration.ofMillis(30));
+    }
+  }
+
   private ManagedClient<String, String> register(ClientRuntime runtime) {
     return runtime.register(
         new ConfigSnapshot<>(new ResourceId("example", "test", "cache"), 1, "native"),

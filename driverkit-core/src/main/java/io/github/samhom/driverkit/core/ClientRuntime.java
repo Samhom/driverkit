@@ -113,7 +113,7 @@ public final class ClientRuntime implements AutoCloseable {
     synchronized (this) {
       if (closed) throw new ClientException(ClientException.Kind.CLOSED, "Runtime is closed");
       if (clients.containsKey(initial.resource()) || registrations.contains(initial.resource()))
-        throw new IllegalArgumentException("Resource already registered");
+        throw new IllegalArgumentException("Resource already registered or awaiting cleanup");
       if (clients.size() + registrations.size() >= maxClients)
         throw new ClientException(ClientException.Kind.OVERLOADED, "Client registry limit reached");
       registrations.add(initial.resource());
@@ -142,6 +142,31 @@ public final class ClientRuntime implements AutoCloseable {
 
   public synchronized int clientCount() {
     return clients.size();
+  }
+
+  /**
+   * Returns true if the captured registration was released; false if absent or still cleaning up.
+   */
+  public boolean unregister(ResourceId resource) {
+    Objects.requireNonNull(resource, "resource");
+    ManagedClient<?, ?> client;
+    synchronized (this) {
+      client = clients.get(resource);
+    }
+    if (client == null) return false;
+    client.close();
+    releaseRegistration(client);
+    synchronized (this) {
+      return clients.get(resource) != client;
+    }
+  }
+
+  void releaseRegistration(ManagedClient<?, ?> client) {
+    if (!client.canUnregister()) return;
+    synchronized (this) {
+      // A delayed callback from an older handle must never remove a replacement registration.
+      if (clients.get(client.resource()) == client) clients.remove(client.resource());
+    }
   }
 
   synchronized CompletionDispatcher.Reservation reserveCompletion() {

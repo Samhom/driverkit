@@ -83,6 +83,7 @@ final class CompletionDispatcher {
   }
 
   void awaitClose(long deadline) throws InterruptedException {
+    if (inCompletionThread()) return;
     executor.awaitTermination(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
   }
 }
