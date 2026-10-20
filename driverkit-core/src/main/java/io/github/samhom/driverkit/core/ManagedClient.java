@@ -139,11 +139,8 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   private void scheduleDisposal(Generation generation) {
     if (generation.closing || generation.disposed) return;
     generation.closing = true;
-    try {
-      runtime.maintenance.execute(() -> dispose(generation));
-    } catch (RejectedExecutionException closedRuntime) {
-      dispose(generation);
-    }
+    // Retiring ownership only queues native work. No adapter code runs under the state lock.
+    dispose(generation);
   }
 
   private void dispose(Generation generation) {

@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 
 /** Bounded ownership survives caller timeouts, including drivers that ignore interruption. */
 final class LifecycleCoordinator {
-  private final ThreadPoolExecutor workers;
+  private final ThreadPoolExecutor initializers, cleanup;
   private final ScheduledThreadPoolExecutor watchdog;
   private final Set<Owned<?>> resources = new HashSet<>();
   private final int capacity;
@@ -17,7 +17,8 @@ final class LifecycleCoordinator {
 
   LifecycleCoordinator(int capacity) {
     this.capacity = capacity;
-    workers = pool("driverkit-lifecycle", capacity);
+    initializers = pool("driverkit-initialize", capacity);
+    cleanup = pool("driverkit-cleanup", capacity);
     watchdog = new ScheduledThreadPoolExecutor(1, factory("driverkit-lifecycle-timer"));
     watchdog.setRemoveOnCancelPolicy(true);
     watchdog.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
@@ -57,7 +58,7 @@ final class LifecycleCoordinator {
       reserved++;
       resources.add(owned);
     }
-    workers.execute(owned.initialization);
+    initializers.execute(owned.initialization);
     return owned;
   }
 
@@ -82,13 +83,15 @@ final class LifecycleCoordinator {
 
   private void shutdownIfIdle() {
     if (stopped && resources.isEmpty()) {
-      workers.shutdown();
+      initializers.shutdown();
+      cleanup.shutdown();
       watchdog.shutdown();
     }
   }
 
   void awaitClose(long deadline) throws InterruptedException {
-    workers.awaitTermination(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+    initializers.awaitTermination(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+    cleanup.awaitTermination(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
   }
 
   <T> T control(Callable<T> action, Duration timeout) {
@@ -244,7 +247,7 @@ final class LifecycleCoordinator {
       closeDeadline = Math.min(closeDeadline, System.nanoTime() + shutdownTimeout.toNanos());
       ready.completeExceptionally(failure);
       if (initializingThread != null) initializingThread.interrupt();
-      if (workers.remove(initialization)) initializationFinished = true;
+      if (initializers.remove(initialization)) initializationFinished = true;
     }
 
     void retire(long deadline, Consumer<Throwable> completion) {
@@ -265,7 +268,7 @@ final class LifecycleCoordinator {
         noClient = client == null;
       }
       if (noClient) finish(null);
-      else workers.execute(this::closeNative);
+      else cleanup.execute(this::closeNative);
     }
 
     private void armAlarm() {
