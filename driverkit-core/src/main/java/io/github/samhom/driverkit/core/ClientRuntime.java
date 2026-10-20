@@ -25,6 +25,7 @@ public final class ClientRuntime implements AutoCloseable {
   final ThreadPoolExecutor maintenance;
   final ScheduledThreadPoolExecutor timers;
   final CompletionDispatcher completions;
+  final LifecycleCoordinator lifecycle;
   private boolean closed;
 
   public ClientRuntime() {
@@ -69,6 +70,7 @@ public final class ClientRuntime implements AutoCloseable {
     this.observer = Objects.requireNonNull(observer, "observer");
     this.admission = Objects.requireNonNull(admission, "admission");
     completions = new CompletionDispatcher(callbackThreads, callbackCapacity);
+    lifecycle = new LifecycleCoordinator(maxClients * 4);
     calls =
         new ThreadPoolExecutor(
             callThreads,
@@ -165,10 +167,11 @@ public final class ClientRuntime implements AutoCloseable {
       snapshot = new ArrayList<>(clients.values());
     }
     long deadline = System.nanoTime() + timeout.toNanos();
-    for (ManagedClient<?, ?> client : snapshot) client.beginClose();
+    lifecycle.stopInitializing();
+    for (ManagedClient<?, ?> client : snapshot) client.beginClose(deadline);
     calls.shutdown();
     for (ManagedClient<?, ?> client : snapshot) client.awaitClose(deadline);
-    for (ManagedClient<?, ?> client : snapshot) client.forceClose();
+    for (ManagedClient<?, ?> client : snapshot) client.forceClose(deadline);
     calls.shutdownNow();
     timers.shutdownNow();
     maintenance.shutdown();
@@ -176,6 +179,7 @@ public final class ClientRuntime implements AutoCloseable {
     try {
       maintenance.awaitTermination(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
       completions.awaitClose(deadline);
+      lifecycle.awaitClose(deadline);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }

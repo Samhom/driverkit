@@ -35,19 +35,23 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   private boolean closed;
   private boolean revoked;
   private int cleanupFailures;
-  private AutoCloseable subscription;
+  private ConfigurationBinding<S> subscription;
+  private boolean bindingInProgress;
+  private long closingDeadline = Long.MAX_VALUE;
 
   private final class Generation {
     final ConfigSnapshot<S> snapshot;
     final C client;
+    final LifecycleCoordinator.Owned<C> ownership;
     int references;
     boolean retired;
     boolean closing;
     boolean disposed;
 
-    Generation(ConfigSnapshot<S> snapshot, C client) {
+    Generation(ConfigSnapshot<S> snapshot, C client, LifecycleCoordinator.Owned<C> ownership) {
       this.snapshot = snapshot;
       this.client = client;
+      this.ownership = ownership;
     }
   }
 
@@ -67,23 +71,10 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   }
 
   private Generation create(ConfigSnapshot<S> snapshot) {
-    adapter.validate(snapshot.settings());
-    C candidate = null;
-    try {
-      candidate =
-          Objects.requireNonNull(adapter.create(snapshot.settings()), "Adapter returned no client");
-      adapter.warmup(candidate, policy.warmupTimeout());
-      return new Generation(snapshot, candidate);
-    } catch (Exception e) {
-      if (candidate != null)
-        try {
-          adapter.close(candidate);
-        } catch (Exception closeFailure) {
-          e.addSuppressed(closeFailure);
-        }
-      throw new ClientException(
-          ClientException.Kind.UPDATE_REJECTED, "Client initialization failed", e);
-    }
+    LifecycleCoordinator.Owned<C> ownership =
+        runtime.lifecycle.initialize(
+            adapter, snapshot.settings(), policy.warmupTimeout(), policy.shutdownTimeout());
+    return new Generation(snapshot, ownership.awaitReady(), ownership);
   }
 
   public ResourceId resource() {
@@ -156,20 +147,21 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   }
 
   private void dispose(Generation generation) {
-    try {
-      adapter.close(generation.client);
-    } catch (Exception ignored) {
-      synchronized (state) {
-        cleanupFailures++;
-      }
-    } finally {
-      synchronized (state) {
-        generation.disposed = true;
-        if (retiring == generation) retiring = null;
-        state.notifyAll();
-      }
-      schedulePending();
+    long deadline;
+    synchronized (state) {
+      deadline = Math.min(closingDeadline, System.nanoTime() + policy.shutdownTimeout().toNanos());
     }
+    generation.ownership.retire(
+        deadline,
+        error -> {
+          synchronized (state) {
+            if (error != null) cleanupFailures++;
+            generation.disposed = true;
+            if (retiring == generation) retiring = null;
+            state.notifyAll();
+          }
+          schedulePending();
+        });
   }
 
   public UpdateResult reload(ConfigSnapshot<S> snapshot) {
@@ -210,22 +202,52 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     }
   }
 
-  public synchronized AutoCloseable bind(ConfigurationSource<S> source) {
+  public AutoCloseable bind(ConfigurationSource<S> source) {
     Objects.requireNonNull(source, "source");
-    synchronized (state) {
-      ensureOpen();
-    }
-    if (subscription != null)
-      throw new IllegalStateException("A configuration source is already bound");
-    subscription = source.subscribe(this::enqueue);
-    return () -> {
-      synchronized (ManagedClient.this) {
-        if (subscription != null) {
-          subscription.close();
-          subscription = null;
-        }
+    synchronized (this) {
+      synchronized (state) {
+        ensureOpen();
       }
-    };
+      if (subscription != null || bindingInProgress)
+        throw new IllegalStateException("A configuration source is already bound");
+      bindingInProgress = true;
+    }
+    ConfigurationBinding<S> candidate = null;
+    try {
+      candidate =
+          new ConfigurationBinding<>(
+              runtime.lifecycle,
+              source,
+              this::enqueue,
+              policy,
+              error -> {
+                if (error != null)
+                  synchronized (state) {
+                    cleanupFailures++;
+                  }
+              });
+      synchronized (this) {
+        synchronized (state) {
+          ensureOpen();
+        }
+        subscription = candidate;
+      }
+      ConfigurationBinding<S> binding = candidate;
+      return () -> {
+        binding.close(System.nanoTime() + policy.shutdownTimeout().toNanos());
+        synchronized (ManagedClient.this) {
+          if (subscription == binding) subscription = null;
+        }
+      };
+    } catch (RuntimeException failure) {
+      if (candidate != null)
+        candidate.close(System.nanoTime() + policy.shutdownTimeout().toNanos());
+      throw failure;
+    } finally {
+      synchronized (this) {
+        bindingInProgress = false;
+      }
+    }
   }
 
   private void enqueue(ConfigSnapshot<S> snapshot) {
@@ -557,24 +579,25 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   }
 
   void beginClose() {
+    beginClose(System.nanoTime() + policy.shutdownTimeout().toNanos());
+  }
+
+  void beginClose(long deadline) {
+    ConfigurationBinding<S> binding;
     synchronized (this) {
-      if (subscription != null)
-        try {
-          subscription.close();
-        } catch (Exception ignored) {
-        } finally {
-          subscription = null;
-        }
+      synchronized (state) {
+        closingDeadline = Math.min(closingDeadline, deadline);
+        closed = true;
+        pending.set(null);
+        active.retired = true;
+        if (active.references == 0) scheduleDisposal(active);
+        if (retiring != null && retiring.references == 0) scheduleDisposal(retiring);
+        state.notifyAll();
+      }
+      binding = subscription;
+      subscription = null;
     }
-    synchronized (state) {
-      if (closed) return;
-      closed = true;
-      pending.set(null);
-      active.retired = true;
-      if (active.references == 0) scheduleDisposal(active);
-      if (retiring != null && retiring.references == 0) scheduleDisposal(retiring);
-      state.notifyAll();
-    }
+    if (binding != null) binding.close(deadline);
   }
 
   void awaitClose(long deadline) {
@@ -591,7 +614,14 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   }
 
   void forceClose() {
+    forceClose(System.nanoTime() + policy.shutdownTimeout().toNanos());
+  }
+
+  void forceClose(long deadline) {
     synchronized (state) {
+      closingDeadline = Math.min(closingDeadline, deadline);
+      active.ownership.retire(closingDeadline, null);
+      if (retiring != null) retiring.ownership.retire(closingDeadline, null);
       scheduleDisposal(active);
       if (retiring != null) scheduleDisposal(retiring);
     }
@@ -600,8 +630,9 @@ public final class ManagedClient<C, S> implements AutoCloseable {
 
   @Override
   public void close() {
-    beginClose();
-    awaitClose(System.nanoTime() + policy.shutdownTimeout().toNanos());
-    forceClose();
+    long deadline = System.nanoTime() + policy.shutdownTimeout().toNanos();
+    beginClose(deadline);
+    awaitClose(deadline);
+    forceClose(deadline);
   }
 }

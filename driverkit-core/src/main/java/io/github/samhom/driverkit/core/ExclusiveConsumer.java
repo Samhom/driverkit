@@ -29,14 +29,20 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
   private long attempted;
   private C consumer;
   private int active;
-  private AutoCloseable subscription;
+  private ConfigurationBinding<S> subscription;
+  private final LifecycleCoordinator lifecycleWork = new LifecycleCoordinator(8);
+  private final AtomicBoolean stopping = new AtomicBoolean();
+  private LifecycleCoordinator.Owned<C> ownership;
+  private boolean cleanupRequested;
   private final DeliveryGuard guard =
       new DeliveryGuard() {
         @Override
         public <T> T invoke(Callable<T> handler, T retryResult) {
           synchronized (gate) {
-            if (revoked.get() || state != State.RUNNING || active >= policy.maxInFlight())
-              return retryResult;
+            if (stopping.get()
+                || revoked.get()
+                || state != State.RUNNING
+                || active >= policy.maxInFlight()) return retryResult;
             active++;
           }
           long started = System.nanoTime();
@@ -113,16 +119,60 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
             },
             new ThreadPoolExecutor.AbortPolicy());
     updates.allowCoreThreadTimeOut(true);
-    adapter.validate(initial.settings());
     try {
-      consumer = Objects.requireNonNull(adapter.start(initial.settings(), guard));
+      ownership = initialize(initial.settings());
+      consumer = ownership.awaitReady();
       state = State.RUNNING;
     } catch (Exception e) {
       updates.shutdownNow();
+      lifecycleWork.stopInitializing();
       state = State.FAILED;
       throw new ClientException(
           ClientException.Kind.UPDATE_REJECTED, "Consumer initialization failed", e);
     }
+  }
+
+  private LifecycleCoordinator.Owned<C> initialize(S settings) {
+    DriverAdapter<C, S> bridge =
+        new DriverAdapter<C, S>() {
+          public String id() {
+            return adapter.id();
+          }
+
+          public void validate(S value) {
+            adapter.validate(value);
+          }
+
+          public C create(S value) throws Exception {
+            return adapter.start(value, guard);
+          }
+
+          public C create(S value, java.time.Duration remaining) throws Exception {
+            return adapter.start(value, guard, remaining);
+          }
+
+          public void warmup(C value, java.time.Duration remaining) {}
+
+          public void close(C value) throws Exception {
+            adapter.close(value);
+          }
+
+          public void close(C value, java.time.Duration remaining) throws Exception {
+            adapter.close(value, remaining);
+          }
+        };
+    return lifecycleWork.initialize(
+        bridge, settings, policy.warmupTimeout(), policy.shutdownTimeout());
+  }
+
+  private void control(boolean pause) {
+    lifecycleWork.control(
+        () -> {
+          if (pause) adapter.pause(consumer);
+          else adapter.resume(consumer);
+          return null;
+        },
+        policy.shutdownTimeout());
   }
 
   public State state() {
@@ -152,7 +202,7 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
     if (!resource.equals(next.resource()))
       throw new IllegalArgumentException("Configuration scope mismatch");
     synchronized (lifecycle) {
-      if (revoked.get() || state == State.CLOSED || state == State.REVOKED)
+      if (stopping.get() || revoked.get() || state == State.CLOSED || state == State.REVOKED)
         throw new ClientException(ClientException.Kind.CLOSED, "Consumer admission is closed");
       if (next.revision() <= attempted) return UpdateResult.STALE;
       adapter.validate(next.settings());
@@ -163,44 +213,47 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
             ClientException.Kind.UPDATE_REJECTED, "Consumer requires explicit recovery");
       state = State.DRAINING;
       try {
-        adapter.pause(consumer);
-        drain(System.nanoTime() + policy.shutdownTimeout().toNanos());
+        long drainDeadline = System.nanoTime() + policy.shutdownTimeout().toNanos();
+        control(true);
+        drain(drainDeadline);
         synchronized (gate) {
           if (active > 0) {
-            adapter.resume(consumer);
+            control(false);
             state = State.RUNNING;
             throw new ClientException(
                 ClientException.Kind.TIMEOUT, "Consumer drain deadline exceeded");
           }
         }
-        adapter.close(consumer);
+        ownership.retire(drainDeadline, null);
+        ownership.awaitClosed(drainDeadline);
         consumer = null;
+        ownership = initialize(next.settings());
         try {
-          consumer = Objects.requireNonNull(adapter.start(next.settings(), guard));
-          if (revoked.get())
+          consumer = ownership.awaitReady();
+          if (stopping.get() || revoked.get())
             throw new ClientException(
                 ClientException.Kind.REVOKED, "Consumer was revoked during startup");
           current = next;
           state = State.RUNNING;
           return UpdateResult.APPLIED;
         } catch (Exception replacementFailure) {
-          if (revoked.get()) {
-            if (consumer != null)
-              try {
-                adapter.close(consumer);
-              } catch (Exception cleanupFailure) {
-                replacementFailure.addSuppressed(cleanupFailure);
-              } finally {
-                consumer = null;
-              }
-            state = State.REVOKED;
+          ownership.retire(System.nanoTime() + policy.shutdownTimeout().toNanos(), null);
+          if (stopping.get() || revoked.get()) {
+            state = revoked.get() ? State.REVOKED : State.CLOSED;
             throw new ClientException(
-                ClientException.Kind.REVOKED,
-                "Consumer was revoked during replacement",
+                ClientException.Kind.CLOSED,
+                "Consumer stopped during replacement",
                 replacementFailure);
           }
           try {
-            consumer = Objects.requireNonNull(adapter.start(current.settings(), guard));
+            // A timed-out start can still produce a group member. Recovery is safe only after
+            // that candidate has actually terminated, never merely after its caller timed out.
+            ownership.awaitClosed(System.nanoTime() + policy.shutdownTimeout().toNanos());
+            ownership = initialize(current.settings());
+            consumer = ownership.awaitReady();
+            if (stopping.get() || revoked.get())
+              throw new ClientException(
+                  ClientException.Kind.CLOSED, "Consumer stopped during recovery");
             state = State.RUNNING;
           } catch (Exception recoveryFailure) {
             state = State.FAILED;
@@ -217,6 +270,7 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
         throw new ClientException(
             ClientException.Kind.UPDATE_REJECTED, "Consumer rotation interrupted", e);
       } catch (ClientException e) {
+        if (state == State.DRAINING) state = State.FAILED;
         throw e;
       } catch (Exception e) {
         state = State.FAILED;
@@ -231,7 +285,9 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
       if (subscription != null || state != State.RUNNING)
         throw new IllegalStateException("Consumer cannot bind a source");
       subscription =
-          source.subscribe(
+          new ConfigurationBinding<>(
+              lifecycleWork,
+              source,
               snapshot -> {
                 if (!resource.equals(snapshot.resource()))
                   throw new IllegalArgumentException("Configuration scope mismatch");
@@ -239,12 +295,15 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
                     snapshot,
                     (old, value) -> old == null || value.revision() > old.revision() ? value : old);
                 schedule();
-              });
+              },
+              policy,
+              null);
     }
   }
 
   private void schedule() {
-    if (state == State.CLOSED
+    if (stopping.get()
+        || state == State.CLOSED
         || state == State.REVOKED
         || pending.get() == null
         || !scheduled.compareAndSet(false, true)) return;
@@ -276,37 +335,39 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
   }
 
   private void stop(boolean revoke) {
+    long deadline = System.nanoTime() + policy.shutdownTimeout().toNanos();
+    stopping.set(true);
+    lifecycleWork.stopInitializing();
     synchronized (lifecycle) {
-      if (state == State.CLOSED || (state == State.REVOKED && consumer == null)) return;
-      state = revoke ? State.REVOKED : State.DRAINING;
+      if (cleanupRequested) return;
+      cleanupRequested = true;
+      state = revoke || revoked.get() ? State.REVOKED : State.DRAINING;
       pending.set(null);
-      if (subscription != null)
-        try {
-          subscription.close();
-        } catch (Exception ignored) {
-        } finally {
-          subscription = null;
-        }
+      if (subscription != null) {
+        subscription.close(deadline);
+        subscription = null;
+      }
       updates.shutdownNow();
       try {
-        if (consumer != null) {
-          adapter.pause(consumer);
-          drain(System.nanoTime() + policy.shutdownTimeout().toNanos());
-        }
-      } catch (InterruptedException e) {
+        drain(deadline);
+      } catch (InterruptedException error) {
         Thread.currentThread().interrupt();
-      } catch (Exception e) {
-        throw new ClientException(
-            ClientException.Kind.DRIVER_FAILURE, "Consumer shutdown failed", e);
       } finally {
-        try {
-          if (consumer != null) adapter.close(consumer);
-        } catch (Exception error) {
-          throw new ClientException(
-              ClientException.Kind.DRIVER_FAILURE, "Consumer resource cleanup failed", error);
-        } finally {
-          consumer = null;
-          state = revoke || revoked.get() ? State.REVOKED : State.CLOSED;
+        if (ownership != null) {
+          ownership.retire(deadline, null);
+          try {
+            ownership.awaitClosed(deadline);
+          } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+          } catch (TimeoutException ignored) {
+            /* Cleanup remains owned and bounded in the background. */
+          } catch (Exception error) {
+            throw new ClientException(
+                ClientException.Kind.DRIVER_FAILURE, "Consumer resource cleanup failed", error);
+          } finally {
+            consumer = null;
+            state = revoke || revoked.get() ? State.REVOKED : State.CLOSED;
+          }
         }
       }
     }

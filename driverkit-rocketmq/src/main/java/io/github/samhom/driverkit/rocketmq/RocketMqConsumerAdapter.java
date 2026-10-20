@@ -86,4 +86,13 @@ public final class RocketMqConsumerAdapter
   public void close(DefaultMQPushConsumer consumer) {
     consumer.shutdown();
   }
+
+  @Override
+  public void close(DefaultMQPushConsumer consumer, java.time.Duration remaining) {
+    long budget = Math.max(1, (remaining.toNanos() + 999999) / 1000000);
+    long configured = consumer.getAwaitTerminationMillisWhenShutdown();
+    consumer.setAwaitTerminationMillisWhenShutdown(
+        configured <= 0 ? budget : Math.min(configured, budget));
+    consumer.shutdown();
+  }
 }

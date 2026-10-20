@@ -107,14 +107,14 @@ class ManagedClientTest {
   }
 
   @Test
-  void failedWarmupClosesCandidateAndPreservesActive() {
+  void failedWarmupClosesCandidateAndPreservesActive() throws Exception {
     Adapter adapter = new Adapter();
     try (ClientRuntime runtime = new ClientRuntime()) {
       ManagedClient<Native, String> handle =
           runtime.register(config(1, "one"), adapter, ClientPolicy.defaults());
       assertThrows(ClientException.class, () -> handle.reload(config(2, "fail")));
       assertEquals(1, handle.status().revision());
-      assertEquals(1, adapter.instances.get(1).closes.get());
+      eventually(() -> adapter.instances.get(1).closes.get() == 1);
       assertEquals(
           "one",
           handle.execute(
@@ -123,14 +123,14 @@ class ManagedClientTest {
   }
 
   @Test
-  void initialWarmupFailureDoesNotRegisterOrLeak() {
+  void initialWarmupFailureDoesNotRegisterOrLeak() throws Exception {
     Adapter adapter = new Adapter();
     try (ClientRuntime runtime = new ClientRuntime()) {
       assertThrows(
           ClientException.class,
           () -> runtime.register(config(1, "fail"), adapter, ClientPolicy.defaults()));
       assertEquals(0, runtime.clientCount());
-      assertEquals(1, adapter.instances.get(0).closes.get());
+      eventually(() -> adapter.instances.get(0).closes.get() == 1);
     }
   }
 

@@ -10,9 +10,17 @@ public interface ConsumerAdapter<C, S> {
 
   C start(S settings, DeliveryGuard guard) throws Exception;
 
+  default C start(S settings, DeliveryGuard guard, java.time.Duration remaining) throws Exception {
+    return start(settings, guard);
+  }
+
   void pause(C consumer) throws Exception;
 
   void resume(C consumer) throws Exception;
 
   void close(C consumer) throws Exception;
+
+  default void close(C consumer, java.time.Duration remaining) throws Exception {
+    close(consumer);
+  }
 }

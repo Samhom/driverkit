@@ -64,8 +64,25 @@ public final class JedisAdapter implements DriverAdapter<RedisClient, RedisSetti
 
   @Override
   public void warmup(RedisClient client, Duration timeout) {
-    if (!"PONG".equals(client.ping()))
-      throw new IllegalStateException("Redis readiness check failed");
+    long deadline = System.nanoTime() + timeout.toNanos();
+    try (Connection connection = client.getPool().getResource()) {
+      int previous = connection.getSoTimeout();
+      int remaining =
+          (int)
+              Math.max(
+                  1,
+                  Math.min(
+                      Integer.MAX_VALUE,
+                      (Math.max(1, deadline - System.nanoTime()) + 999999) / 1000000));
+      connection.setSoTimeout(previous <= 0 ? remaining : Math.min(previous, remaining));
+      try {
+        connection.sendCommand(Protocol.Command.PING);
+        if (!"PONG".equals(connection.getStatusCodeReply()))
+          throw new IllegalStateException("Redis readiness check failed");
+      } finally {
+        connection.setSoTimeout(previous);
+      }
+    }
   }
 
   @Override

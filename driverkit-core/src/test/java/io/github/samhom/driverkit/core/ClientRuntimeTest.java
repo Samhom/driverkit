@@ -62,6 +62,8 @@ class ClientRuntimeTest {
       assertEquals(
           ClientException.Kind.CLOSED,
           assertInstanceOf(ClientException.class, error.getCause()).kind());
+      long cleanupDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+      while (closes.get() != 1 && System.nanoTime() < cleanupDeadline) Thread.sleep(5);
       assertEquals(1, closes.get());
       assertEquals(0, runtime.clientCount());
     } finally {
