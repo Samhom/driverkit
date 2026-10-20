@@ -1,0 +1,11 @@
+**/target/
+.m2-cache/
+.tools/
+.local/
+.idea/
+*.iml
+*.log
+.env
+.env.*
+!.env.example
+config.local.*

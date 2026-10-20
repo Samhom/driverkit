@@ -1,0 +1,46 @@
+name: Build and verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['17', '21']
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - name: Compile and test
+        run: mvn -B -ntp -s .mvn/settings.xml -Dmaven.repo.local="$GITHUB_WORKSPACE/.m2-cache" verify
+      - name: Formatting
+        run: mvn -B -ntp -s .mvn/settings.xml -Dmaven.repo.local="$GITHUB_WORKSPACE/.m2-cache" com.spotify.fmt:fmt-maven-plugin:2.25:check
+      - name: Resolve audit inventory
+        if: matrix.java == '17'
+        run: mvn -B -ntp -s .mvn/settings.xml -Dmaven.repo.local="$GITHUB_WORKSPACE/.m2-cache" org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree -DoutputType=json -DoutputFile=target/dependencies.json
+      - name: Audit resolved and embedded components
+        if: matrix.java == '17'
+        run: python3 tools/audit_dependencies.py
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        if: matrix.java == '17'
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Java 8 core runtime
+        if: matrix.java == '17'
+        run: |
+          mkdir -p .local/java8
+          javac -cp driverkit-core/target/driverkit-core-0.1.0-SNAPSHOT.jar -d .local/java8 .ci/Java8Smoke.java
+          java -cp .local/java8:driverkit-core/target/driverkit-core-0.1.0-SNAPSHOT.jar Java8Smoke
