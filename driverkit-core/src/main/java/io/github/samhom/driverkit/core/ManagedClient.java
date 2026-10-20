@@ -293,6 +293,10 @@ public final class ManagedClient<C, S> implements AutoCloseable {
 
   public <T> T execute(Operation operation, Call<C, T> call) {
     Objects.requireNonNull(call, "call");
+    if (CompletionDispatcher.inCompletionThread())
+      throw new ClientException(
+          ClientException.Kind.INVALID_REQUEST,
+          "Use asynchronous composition instead of a blocking SDK call inside a completion callback");
     try {
       return executeAsync(
               operation,
@@ -318,166 +322,230 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   public <T> CompletableFuture<T> executeAsync(Operation operation, AsyncCall<C, T> call) {
     Objects.requireNonNull(operation, "operation");
     Objects.requireNonNull(call, "call");
-    final long start = System.nanoTime();
-    final CallContext context = new CallContext(operation.timeout());
-    final CompletableFuture<T> result = new CompletableFuture<>();
-    final ClientSession<C> lease;
+    long started = System.nanoTime();
+    CallContext context = new CallContext(operation.timeout());
+    CompletionDispatcher.Reservation completion = null;
+    ClientSession<C> lease;
     try {
       runtime.admission.check(resource, operation);
+      completion = runtime.reserveCompletion();
       lease = session();
     } catch (RuntimeException rejected) {
+      if (completion != null) completion.release();
       Observation observation = start(operation, status().revision());
       try {
-        observation.finish(Observation.Outcome.REJECTED, System.nanoTime() - start);
+        observation.finish(Observation.Outcome.REJECTED, System.nanoTime() - started);
       } catch (RuntimeException | LinkageError ignored) {
       }
-      result.completeExceptionally(rejected);
-      return result;
+      CompletableFuture<T> rejectedResult = new CompletableFuture<>();
+      rejectedResult.completeExceptionally(rejected);
+      return rejectedResult;
     }
-    final Observation observation = start(operation, lease.revision());
-    context.bindSettings(lease.settings(Object.class));
-    final AtomicBoolean observed = new AtomicBoolean();
+    Invocation<T> invocation =
+        new Invocation<>(operation, call, lease, completion, started, context);
+    outstanding.put(invocation.result, invocation::abort);
+    invocation.submit();
+    return invocation.result;
+  }
+
+  private static final class CallFuture<T> extends CompletableFuture<T> {
+    private final java.util.function.BooleanSupplier cancellation;
+
+    CallFuture(java.util.function.BooleanSupplier cancellation) {
+      this.cancellation = cancellation;
+    }
+
+    @Override
+    public boolean cancel(boolean interrupt) {
+      return cancellation.getAsBoolean();
+    }
+
+    boolean cancelDirectly() {
+      return super.cancel(false);
+    }
+  }
+
+  private final class Invocation<T> {
+    final Operation operation;
+    final AsyncCall<C, T> call;
+    final ClientSession<C> lease;
+    final CompletionDispatcher.Reservation completion;
+    final long start;
+    final CallContext context;
+    final Observation observation;
+    final CallFuture<T> result = new CallFuture<>(this::cancel);
     final Object dispatch = new Object();
-    final AtomicBoolean started = new AtomicBoolean();
-    java.util.function.Consumer<Observation.Outcome> finish =
-        outcome -> {
-          if (observed.compareAndSet(false, true))
-            try {
-              observation.finish(outcome, System.nanoTime() - start);
-            } catch (RuntimeException | LinkageError ignored) {
-            }
-        };
-    Runnable releasePhysical =
-        () -> {
-          outstanding.remove(result);
-          lease.close();
-        };
-    AtomicReference<Runnable> queuedTask = new AtomicReference<>();
-    Runnable discardQueued =
-        () -> {
-          synchronized (dispatch) {
-            if (!started.get()) {
-              Runnable task = queuedTask.get();
-              if (task != null) runtime.calls.remove(task);
-              releasePhysical.run();
-            }
-          }
-        };
-    outstanding.put(
-        result,
-        () -> {
-          synchronized (dispatch) {
-            ClientException.Kind kind =
-                !operation.replaySafe() && started.get()
-                    ? ClientException.Kind.WRITE_OUTCOME_UNKNOWN
-                    : ClientException.Kind.CLOSED;
-            if (result.completeExceptionally(
-                new ClientException(kind, "Client shutdown deadline reached")))
-              finish.accept(Observation.Outcome.ERROR);
-          }
-          releasePhysical.run();
-        });
-    result.whenComplete(
-        (value, error) -> {
-          if (result.isCancelled()) {
-            discardQueued.run();
-            finish.accept(Observation.Outcome.CANCELLED);
-          }
-        });
-    final ScheduledFuture<?> deadline;
-    try {
-      deadline =
-          runtime.timers.schedule(
-              () -> {
-                synchronized (dispatch) {
-                  ClientException.Kind kind =
-                      !operation.replaySafe() && started.get()
-                          ? ClientException.Kind.WRITE_OUTCOME_UNKNOWN
-                          : ClientException.Kind.TIMEOUT;
-                  discardQueued.run();
-                  if (result.completeExceptionally(
-                      new ClientException(kind, "Operation deadline exceeded")))
-                    finish.accept(Observation.Outcome.TIMEOUT);
-                }
-              },
-              Math.max(1, context.remaining().toNanos()),
-              TimeUnit.NANOSECONDS);
-    } catch (RejectedExecutionException e) {
-      releasePhysical.run();
-      result.completeExceptionally(e);
-      finish.accept(Observation.Outcome.REJECTED);
-      return result;
+    final Runnable task = this::run;
+    ScheduledFuture<?> deadline;
+    boolean started, terminal;
+
+    Invocation(
+        Operation operation,
+        AsyncCall<C, T> call,
+        ClientSession<C> lease,
+        CompletionDispatcher.Reservation completion,
+        long start,
+        CallContext context) {
+      this.operation = operation;
+      this.call = call;
+      this.lease = lease;
+      this.completion = completion;
+      this.start = start;
+      this.context = context;
+      context.bindSettings(lease.settings(Object.class));
+      observation = start(operation, lease.revision());
     }
-    result.whenComplete((value, error) -> deadline.cancel(false));
-    try {
-      Runnable task =
-          () -> {
-            try {
-              synchronized (dispatch) {
-                if (result.isDone()) {
-                  releasePhysical.run();
-                  return;
-                }
-                context.checkDeadline();
-                started.set(true);
-              }
-              synchronized (state) {
-                ensureOpen();
-              }
-              AutoCloseable scope;
-              try {
-                scope = observation.openScope();
-              } catch (RuntimeException | LinkageError ignored) {
-                scope = () -> {};
-              }
-              CompletionStage<T> nativeResult;
-              try {
-                nativeResult =
-                    Objects.requireNonNull(
-                        call.execute(lease.client(), context),
-                        "Native operation returned no completion stage");
-              } finally {
-                try {
-                  scope.close();
-                } catch (Exception | LinkageError ignored) {
-                }
-              }
-              nativeResult.whenComplete(
-                  (value, error) -> {
-                    try {
-                      if (error == null) {
-                        if (result.complete(value)) finish.accept(Observation.Outcome.SUCCESS);
-                      } else if (result.completeExceptionally(translate(error, operation)))
-                        finish.accept(
-                            unwrap(error) instanceof CancellationException
-                                ? Observation.Outcome.CANCELLED
-                                : Observation.Outcome.ERROR);
-                    } finally {
-                      releasePhysical.run();
-                    }
-                  });
-            } catch (Throwable error) {
-              try {
-                if (result.completeExceptionally(translate(error, operation)))
-                  finish.accept(Observation.Outcome.ERROR);
-              } finally {
-                releasePhysical.run();
-              }
-            }
-          };
-      queuedTask.set(task);
-      synchronized (dispatch) {
-        if (result.isDone()) releasePhysical.run();
-        else runtime.calls.execute(task);
+
+    void releasePhysical() {
+      outstanding.remove(result);
+      lease.close();
+    }
+
+    void discardQueued() {
+      if (!started) {
+        runtime.calls.remove(task);
+        releasePhysical();
       }
-    } catch (RejectedExecutionException rejected) {
-      releasePhysical.run();
-      result.completeExceptionally(
-          new ClientException(
-              ClientException.Kind.OVERLOADED, "Runtime call queue is full", rejected));
-      finish.accept(Observation.Outcome.REJECTED);
     }
-    return result;
+
+    boolean select() {
+      if (terminal) return false;
+      terminal = true;
+      if (deadline != null) deadline.cancel(false);
+      discardQueued();
+      return true;
+    }
+
+    void observe(Observation.Outcome outcome, long elapsed) {
+      try {
+        observation.finish(outcome, elapsed);
+      } catch (RuntimeException | LinkageError ignored) {
+      }
+    }
+
+    void deliver(T value, Throwable error, Observation.Outcome outcome) {
+      long elapsed = System.nanoTime() - start;
+      completion.deliver(
+          () -> {
+            observe(outcome, elapsed);
+            if (error == null) result.complete(value);
+            else result.completeExceptionally(error);
+          });
+    }
+
+    boolean cancel() {
+      synchronized (dispatch) {
+        if (!select()) return result.isCancelled();
+      }
+      long elapsed = System.nanoTime() - start;
+      completion.deliver(() -> observe(Observation.Outcome.CANCELLED, elapsed));
+      // Explicit caller cancellation keeps CompletableFuture's immediate state change and runs
+      // its synchronous dependents on that caller, never a driver or timer thread.
+      return result.cancelDirectly();
+    }
+
+    void abort() {
+      boolean selected;
+      Throwable error;
+      synchronized (dispatch) {
+        error =
+            new ClientException(
+                !operation.replaySafe() && started
+                    ? ClientException.Kind.WRITE_OUTCOME_UNKNOWN
+                    : ClientException.Kind.CLOSED,
+                "Client shutdown deadline reached");
+        selected = select();
+      }
+      releasePhysical();
+      if (selected) deliver(null, error, Observation.Outcome.ERROR);
+    }
+
+    void expire() {
+      Throwable error;
+      synchronized (dispatch) {
+        error =
+            new ClientException(
+                !operation.replaySafe() && started
+                    ? ClientException.Kind.WRITE_OUTCOME_UNKNOWN
+                    : ClientException.Kind.TIMEOUT,
+                "Operation deadline exceeded");
+        if (!select()) return;
+      }
+      deliver(null, error, Observation.Outcome.TIMEOUT);
+    }
+
+    void submit() {
+      try {
+        synchronized (dispatch) {
+          if (terminal) return;
+          deadline =
+              runtime.timers.schedule(
+                  this::expire, Math.max(1, context.remaining().toNanos()), TimeUnit.NANOSECONDS);
+          runtime.calls.execute(task);
+        }
+      } catch (RejectedExecutionException rejected) {
+        finish(
+            null,
+            new ClientException(
+                ClientException.Kind.OVERLOADED,
+                "Runtime no longer accepts queued calls",
+                rejected),
+            Observation.Outcome.REJECTED);
+      }
+    }
+
+    void finish(T value, Throwable error, Observation.Outcome outcome) {
+      boolean selected;
+      synchronized (dispatch) {
+        selected = select();
+      }
+      // Native work has finished: release capacity before any user callback is delivered.
+      releasePhysical();
+      if (selected) deliver(value, error, outcome);
+    }
+
+    void run() {
+      try {
+        synchronized (dispatch) {
+          if (terminal) return;
+          context.checkDeadline();
+          synchronized (state) {
+            ensureOpen();
+          }
+          started = true;
+        }
+        AutoCloseable scope;
+        try {
+          scope = observation.openScope();
+        } catch (RuntimeException | LinkageError ignored) {
+          scope = () -> {};
+        }
+        CompletionStage<T> nativeResult;
+        try {
+          nativeResult =
+              Objects.requireNonNull(
+                  call.execute(lease.client(), context),
+                  "Native operation returned no completion stage");
+        } finally {
+          try {
+            scope.close();
+          } catch (Exception | LinkageError ignored) {
+          }
+        }
+        nativeResult.whenComplete(
+            (value, error) ->
+                finish(
+                    value,
+                    error == null ? null : translate(error, operation),
+                    error == null
+                        ? Observation.Outcome.SUCCESS
+                        : unwrap(error) instanceof CancellationException
+                            ? Observation.Outcome.CANCELLED
+                            : Observation.Outcome.ERROR));
+      } catch (Throwable error) {
+        finish(null, translate(error, operation), Observation.Outcome.ERROR);
+      }
+    }
   }
 
   /** Revocation immediately closes admission. Existing server-side effects cannot be undone. */

@@ -188,6 +188,7 @@ class ManagedClientTest {
       assertEquals(1, handle.status().inFlight());
       nativeResult.complete("late");
       eventually(() -> handle.status().inFlight() == 0);
+      eventually(() -> outcomes.size() == 1);
       assertEquals(List.of(Observation.Outcome.CANCELLED), outcomes);
     }
   }

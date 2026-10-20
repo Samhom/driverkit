@@ -24,6 +24,7 @@ public final class ClientRuntime implements AutoCloseable {
   final ThreadPoolExecutor calls;
   final ThreadPoolExecutor maintenance;
   final ScheduledThreadPoolExecutor timers;
+  final CompletionDispatcher completions;
   private boolean closed;
 
   public ClientRuntime() {
@@ -40,6 +41,24 @@ public final class ClientRuntime implements AutoCloseable {
       int queuedCalls,
       Observer observer,
       AdmissionPolicy admission) {
+    this(
+        maxClients,
+        callThreads,
+        queuedCalls,
+        observer,
+        admission,
+        Math.min(4, callThreads),
+        Math.max(64, Math.min(100000, queuedCalls + callThreads)));
+  }
+
+  public ClientRuntime(
+      int maxClients,
+      int callThreads,
+      int queuedCalls,
+      Observer observer,
+      AdmissionPolicy admission,
+      int callbackThreads,
+      int callbackCapacity) {
     if (maxClients < 1
         || maxClients > 4096
         || callThreads < 1
@@ -49,6 +68,7 @@ public final class ClientRuntime implements AutoCloseable {
     this.maxClients = maxClients;
     this.observer = Objects.requireNonNull(observer, "observer");
     this.admission = Objects.requireNonNull(admission, "admission");
+    completions = new CompletionDispatcher(callbackThreads, callbackCapacity);
     calls =
         new ThreadPoolExecutor(
             callThreads,
@@ -122,6 +142,11 @@ public final class ClientRuntime implements AutoCloseable {
     return clients.size();
   }
 
+  synchronized CompletionDispatcher.Reservation reserveCompletion() {
+    if (closed) throw new ClientException(ClientException.Kind.CLOSED, "Runtime is closed");
+    return completions.reserve();
+  }
+
   @Override
   public void close() {
     close(Duration.ofSeconds(30));
@@ -147,8 +172,10 @@ public final class ClientRuntime implements AutoCloseable {
     calls.shutdownNow();
     timers.shutdownNow();
     maintenance.shutdown();
+    completions.close();
     try {
       maintenance.awaitTermination(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+      completions.awaitClose(deadline);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
