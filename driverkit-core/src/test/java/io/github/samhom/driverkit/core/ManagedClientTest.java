@@ -84,10 +84,52 @@ class ManagedClientTest {
       Native oldClient = old.client();
       old.close();
       old.close();
-      eventually(() -> oldClient.closes.get() == 1);
+      eventually(() -> handle.status().retiringGenerations() == 0);
+      assertEquals(1, oldClient.closes.get());
       assertEquals(UpdateResult.APPLIED, handle.reload(config(3, "three")));
     }
     assertTrue(adapter.instances.stream().allMatch(client -> client.closes.get() == 1));
+  }
+
+  @Test
+  void nativeCloseEntryDoesNotMeanRetirementHasCompleted() throws Exception {
+    CountDownLatch closeEntered = new CountDownLatch(1), releaseClose = new CountDownLatch(1);
+    FactoryAdapter<Native, String> adapter =
+        new FactoryAdapter<>(
+            "test",
+            Native::new,
+            (client, remaining) -> {},
+            client -> {
+              client.closes.incrementAndGet();
+              if (client.value.equals("one")) {
+                closeEntered.countDown();
+                if (!releaseClose.await(5, TimeUnit.SECONDS)) throw new TimeoutException();
+              }
+            });
+    try (ClientRuntime runtime = new ClientRuntime()) {
+      ManagedClient<Native, String> handle =
+          runtime.register(
+              config(1, "one"),
+              adapter,
+              new ClientPolicy(4, Duration.ofSeconds(1), Duration.ofSeconds(5)));
+      Native old;
+      try (ClientSession<Native> session = handle.session()) {
+        old = session.client();
+      }
+      try {
+        assertEquals(UpdateResult.APPLIED, handle.reload(config(2, "two")));
+        assertTrue(closeEntered.await(1, TimeUnit.SECONDS));
+        assertEquals(1, old.closes.get());
+        assertEquals(1, handle.status().retiringGenerations());
+        assertEquals(UpdateResult.BUSY, handle.reload(config(3, "three")));
+      } finally {
+        releaseClose.countDown();
+      }
+      eventually(() -> handle.status().retiringGenerations() == 0);
+      assertEquals(UpdateResult.APPLIED, handle.reload(config(3, "three")));
+    } finally {
+      releaseClose.countDown();
+    }
   }
 
   @Test
