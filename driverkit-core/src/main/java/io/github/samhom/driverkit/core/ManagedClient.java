@@ -352,6 +352,17 @@ public final class ManagedClient<C, S> implements AutoCloseable {
           outstanding.remove(result);
           lease.close();
         };
+    AtomicReference<Runnable> queuedTask = new AtomicReference<>();
+    Runnable discardQueued =
+        () -> {
+          synchronized (dispatch) {
+            if (!started.get()) {
+              Runnable task = queuedTask.get();
+              if (task != null) runtime.calls.remove(task);
+              releasePhysical.run();
+            }
+          }
+        };
     outstanding.put(
         result,
         () -> {
@@ -368,7 +379,10 @@ public final class ManagedClient<C, S> implements AutoCloseable {
         });
     result.whenComplete(
         (value, error) -> {
-          if (result.isCancelled()) finish.accept(Observation.Outcome.CANCELLED);
+          if (result.isCancelled()) {
+            discardQueued.run();
+            finish.accept(Observation.Outcome.CANCELLED);
+          }
         });
     final ScheduledFuture<?> deadline;
     try {
@@ -380,6 +394,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
                       !operation.replaySafe() && started.get()
                           ? ClientException.Kind.WRITE_OUTCOME_UNKNOWN
                           : ClientException.Kind.TIMEOUT;
+                  discardQueued.run();
                   if (result.completeExceptionally(
                       new ClientException(kind, "Operation deadline exceeded")))
                     finish.accept(Observation.Outcome.TIMEOUT);
@@ -395,7 +410,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     }
     result.whenComplete((value, error) -> deadline.cancel(false));
     try {
-      runtime.calls.execute(
+      Runnable task =
           () -> {
             try {
               synchronized (dispatch) {
@@ -449,7 +464,12 @@ public final class ManagedClient<C, S> implements AutoCloseable {
                 releasePhysical.run();
               }
             }
-          });
+          };
+      queuedTask.set(task);
+      synchronized (dispatch) {
+        if (result.isDone()) releasePhysical.run();
+        else runtime.calls.execute(task);
+      }
     } catch (RejectedExecutionException rejected) {
       releasePhysical.run();
       result.completeExceptionally(
