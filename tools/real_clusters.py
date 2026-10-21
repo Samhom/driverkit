@@ -21,14 +21,14 @@ IMAGES = {
     "redis": "redis:8.2.3",
     "elasticsearch": "docker.elastic.co/elasticsearch/elasticsearch:9.5.5",
     "couchbase": "couchbase:community-7.6.2",
-    "rocketmq": "apache/rocketmq:5.5.1",
+    "rocketmq": "apache/rocketmq:5.5.0",
 }
 
 
 def command(args, timeout=120):
     result = subprocess.run(args, capture_output=True, timeout=timeout, check=False)
     if result.returncode:
-        raise RuntimeError("Fixture command failed: " + args[0])
+        raise RuntimeError("Fixture command failed: " + " ".join(args[:2]))
     if len(result.stdout) > 1024 * 1024:
         raise RuntimeError("Oversized fixture command output")
     return result.stdout.decode().strip()

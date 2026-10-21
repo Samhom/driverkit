@@ -24,7 +24,7 @@ RESP 测试通过真实 Jedis 连接池和 socket 执行认证、KV 与 Pipeline
 
 ### 独立真实服务回归
 
-`Real cluster recovery` CI 在独立 Linux runner 上分别启动 Redis 8.2.3、Elasticsearch 9.5.5、Couchbase Community 7.6.2、RocketMQ 5.5.1。执行 `python3 tools/real_clusters.py redis`（或其他产品名）可复现；要求专用 Linux Docker 环境和空闲的标准服务端口。它先构建 `-Preal-clusters`，再通过 Failsafe 执行 `NativeClustersIT`，缺少 fixture 环境会失败。
+`Real cluster recovery` CI 在独立 Linux runner 上分别启动 Redis 8.2.3、Elasticsearch 9.5.5、Couchbase Community 7.6.2、RocketMQ 5.5.0（官方 Docker 镜像尚无 5.5.1 标签，客户端为 5.5.1）。执行 `python3 tools/real_clusters.py redis`（或其他产品名）可复现；要求专用 Linux Docker 环境和空闲的标准服务端口。它先构建 `-Preal-clusters`，再通过 Failsafe 执行 `NativeClustersIT`，缺少 fixture 环境会失败。
 
 每个产品使用真实适配器和同一个受管句柄，验证错误凭据拒绝、容器暂停时调用失败、解除暂停后恢复、容器重启后恢复、旧凭据在新连接上被拒绝及新版本配置轮换后恢复。恢复探测使用有期限的测试轮询，不是 SDK 自动重试承诺。镜像版本固定，成功后记录实际 digest、JDK 和场景至 `target/real-cluster-evidence.json` 并输出至 CI。
 
