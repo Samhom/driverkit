@@ -38,7 +38,9 @@ python3 tools/audit_dependencies.py
 
 5.5.1 的 `TlsSystemConfig` 默认开启 TLS 测试模式、关闭客户端验证服务器；`TlsHelper` 对这些配置使用信任全部证书的管理器。仅设置 `setUseTLS(true)` 不能作为安全保证；关闭测试模式也不足以证明完整的主机名校验。
 
-本适配器在解析凭据和发起网络连接前拒绝 `tls=true`，不修改上游进程全局 TLS 参数。`tls=false` 必须由可信部署配置显式选择，并配合经过评审的受保护网络。TLS 部署需提供完成证书链、服务器身份校验及握手失败测试的专用传输适配，当前为**需人工安全评审**。核心 `FactoryAdapter` 可以承接此类实现。
+`driverkit-rocketmq-transport` 使用官方 5.5.1 二进制与源码的固定 SHA-256 重建 Remoting。构建保留原生类，仅重新编译 `NettyRemotingClient` 并替换 TLS 初始化和 DNS 解析前的目标属性传递；不使用反射，不修改全局上游 TLS 参数。构建输入改变即失败，升级须重新审查。补丁依照 JDK 信任库验证证书链，按 NameServer/Broker 各自原始目标执行 HTTPS 身份验证，允许 TLS 1.2/1.3，握手期限受连接超时限制。初始化失败直接拒绝；没有降级为明文的路径。
+
+适配器排除原版 `rocketmq-remoting`，应用不得再从其他依赖引入该原版构件，否则同名类会产生类路径歧义。私有 CA 由部署配置 JDK truststore；补丁不读取上游的 `tls.test.mode.enable`、`tls.client.authServer` 等不安全开关，也暂不支持客户端证书。回环真实握手测试覆盖可信链、未知 CA、错误 DNS、缺少 IP SAN 与过期证书。真实 Broker TLS、客户端证书及目标网络策略仍需目标环境验证。`tls=false` 必须由可信配置显式选择并使用受保护网络。
 
 ## 接入方复核
 

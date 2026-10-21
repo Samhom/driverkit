@@ -43,6 +43,7 @@
     <module>driverkit-redis-jedis</module>
     <module>driverkit-elasticsearch</module>
     <module>driverkit-couchbase</module>
+    <module>driverkit-rocketmq-transport</module>
     <module>driverkit-rocketmq</module>
     <module>driverkit-spring-boot</module>
     <module>driverkit-examples</module>

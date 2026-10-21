@@ -1,0 +1,6 @@
+DriverKit RocketMQ Transport
+This artifact includes Apache RocketMQ remoting 5.5.1, licensed under Apache License 2.0.
+Upstream: https://github.com/apache/rocketmq/tree/rocketmq-all-5.5.1/remoting
+Modifications: strict JDK TLS trust, original peer host/port propagation before DNS,
+HTTPS endpoint identification, TLS 1.2/1.3, and bounded handshakes.
+The upstream LICENSE and NOTICE remain in META-INF of the resulting artifact.

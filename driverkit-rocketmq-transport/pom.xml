@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+  <artifactId>driverkit-rocketmq-transport</artifactId>
+  <description>Version-locked RocketMQ 5.5.1 remoting rebuild with verified TLS.</description>
+  <dependencies>
+    <dependency><groupId>org.apache.rocketmq</groupId><artifactId>rocketmq-remoting</artifactId><version>5.5.1</version><scope>provided</scope><optional>true</optional><exclusions><exclusion><groupId>io.github.aliyunmq</groupId><artifactId>rocketmq-logback-classic</artifactId></exclusion></exclusions></dependency>
+    <dependency><groupId>org.apache.rocketmq</groupId><artifactId>rocketmq-common</artifactId><version>5.5.1</version><exclusions><exclusion><groupId>io.github.aliyunmq</groupId><artifactId>rocketmq-logback-classic</artifactId></exclusion></exclusions></dependency>
+    <dependency><groupId>org.apache.commons</groupId><artifactId>commons-lang3</artifactId><version>3.20.0</version></dependency>
+    <dependency><groupId>org.reflections</groupId><artifactId>reflections</artifactId><version>0.9.11</version></dependency>
+    <dependency><groupId>org.awaitility</groupId><artifactId>awaitility</artifactId><version>4.1.0</version></dependency>
+  </dependencies>
+  <build><plugins>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><version>3.8.1</version><executions><execution>
+      <id>fixed-upstream-inputs</id><phase>generate-sources</phase><goals><goal>copy</goal></goals><configuration><artifactItems>
+        <artifactItem><groupId>org.apache.rocketmq</groupId><artifactId>rocketmq-remoting</artifactId><version>5.5.1</version><type>jar</type><outputDirectory>${project.build.directory}/upstream</outputDirectory></artifactItem>
+        <artifactItem><groupId>org.apache.rocketmq</groupId><artifactId>rocketmq-remoting</artifactId><version>5.5.1</version><type>jar</type><classifier>sources</classifier><outputDirectory>${project.build.directory}/upstream</outputDirectory></artifactItem>
+      </artifactItems></configuration>
+    </execution></executions></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><version>3.2.0</version><executions><execution>
+      <id>verified-tls-patch</id><phase>generate-sources</phase><goals><goal>run</goal></goals><configuration><target>
+        <checksum file="${project.build.directory}/upstream/rocketmq-remoting-5.5.1.jar" algorithm="SHA-256" property="upstream.binary.sha"/>
+        <checksum file="${project.build.directory}/upstream/rocketmq-remoting-5.5.1-sources.jar" algorithm="SHA-256" property="upstream.sources.sha"/>
+        <fail message="Upstream inputs changed: review the TLS patch before building"><condition><not><and>
+          <equals arg1="${upstream.binary.sha}" arg2="a8694e3cf7ea956de1c3a42638e59c4d676f16efb18b11a486f95bfa5b978121"/>
+          <equals arg1="${upstream.sources.sha}" arg2="ac2d2ad39cbe35e2125ce8cfdd2dd1c20ff7007f9960c1c4b597e292123a6bf6"/>
+        </and></not></condition></fail>
+        <unzip src="${project.build.directory}/upstream/rocketmq-remoting-5.5.1.jar" dest="${project.build.outputDirectory}"><patternset><exclude name="org/apache/rocketmq/remoting/netty/NettyRemotingClient*.class"/><exclude name="META-INF/MANIFEST.MF"/></patternset></unzip>
+        <unzip src="${project.build.directory}/upstream/rocketmq-remoting-5.5.1-sources.jar" dest="${project.build.directory}/generated-sources/upstream"><patternset><include name="org/apache/rocketmq/remoting/netty/NettyRemotingClient.java"/></patternset></unzip>
+        <replace file="${project.build.directory}/generated-sources/upstream/org/apache/rocketmq/remoting/netty/NettyRemotingClient.java" failOnNoReplacements="true"
+          token="sslContext = TlsHelper.buildSslContext(true);" value="sslContext = io.github.samhom.driverkit.rocketmq.transport.VerifiedTls.context();"/>
+        <replace file="${project.build.directory}/generated-sources/upstream/org/apache/rocketmq/remoting/netty/NettyRemotingClient.java" failOnNoReplacements="true"
+          token="sslContext.newHandler(ch.alloc())" value="io.github.samhom.driverkit.rocketmq.transport.VerifiedTls.handler(ch, sslContext, nettyClientConfig.getConnectTimeoutMillis())"/>
+        <replace file="${project.build.directory}/generated-sources/upstream/org/apache/rocketmq/remoting/netty/NettyRemotingClient.java" failOnNoReplacements="true"
+          token="return fetchBootstrap(addr).connect(host, port);" value="return fetchBootstrap(addr).clone().attr(io.github.samhom.driverkit.rocketmq.transport.VerifiedTls.PEER_HOST, host).attr(io.github.samhom.driverkit.rocketmq.transport.VerifiedTls.PEER_PORT, port).connect(host, port);"/>
+      </target></configuration>
+    </execution></executions></plugin>
+    <plugin><groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId><version>3.6.1</version><executions><execution>
+      <id>patched-source</id><phase>generate-sources</phase><goals><goal>add-source</goal></goals><configuration><sources><source>${project.build.directory}/generated-sources/upstream</source></sources></configuration>
+    </execution></executions></plugin>
+    <plugin><groupId>com.spotify.fmt</groupId><artifactId>fmt-maven-plugin</artifactId><configuration><sourceDirectory>${project.basedir}/src/main/java</sourceDirectory></configuration></plugin>
+  </plugins></build>
+</project>

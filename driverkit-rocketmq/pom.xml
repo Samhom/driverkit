@@ -8,6 +8,7 @@
   </parent>
   <artifactId>driverkit-rocketmq</artifactId>
   <dependencies>
+    <dependency><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-rocketmq-transport</artifactId><version>${project.version}</version></dependency>
     <dependency>
       <groupId>io.github.samhom.driverkit</groupId>
       <artifactId>driverkit-core</artifactId>
@@ -18,6 +19,7 @@
       <artifactId>rocketmq-client</artifactId>
       <version>${rocketmq.version}</version>
       <exclusions>
+        <exclusion><groupId>org.apache.rocketmq</groupId><artifactId>rocketmq-remoting</artifactId></exclusion>
         <exclusion>
           <groupId>io.github.aliyunmq</groupId>
           <artifactId>rocketmq-logback-classic</artifactId>

@@ -8,7 +8,7 @@
 
 RESP 测试通过真实 Jedis 连接池和 socket 执行认证、KV 与 Pipeline。HTTP 测试通过真实 Elasticsearch Java API Client 执行认证、CRUD、429 和部分失败 Bulk，并验证过大请求不会发送。
 
-它们不能代替真实集群测试。Couchbase 集群、RocketMQ Broker/Proxy、真实 TLS 和认证服务不由默认单元测试启动。
+它们不能代替真实集群测试。默认测试还通过现场生成的临时 CA/叶证书验证 Remoting 原生管道的 TLS 握手，包括未知 CA、名称错误、过期和缺少 IP SAN；无硬编码私钥或密码。Couchbase 集群、RocketMQ Broker/Proxy 不由默认单元测试启动。
 
 ## Windows
 

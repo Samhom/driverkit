@@ -10,9 +10,6 @@ final class RemotingAuthentication {
 
   static void validateTransport(RocketMqSettings settings) {
     java.util.Objects.requireNonNull(settings);
-    if (settings.nameServer().tls())
-      throw new IllegalArgumentException(
-          "Remoting TLS requires an audited transport adapter with server identity verification");
   }
 
   static RPCHook hook(CredentialsProvider provider) {
