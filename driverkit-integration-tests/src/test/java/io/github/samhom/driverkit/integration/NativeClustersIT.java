@@ -298,15 +298,22 @@ class NativeClustersIT {
 
   static void await(Checked check, int seconds) throws Exception {
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+    Throwable lastFailure = null;
     while (System.nanoTime() < deadline) {
       try {
         check.run();
         return;
       } catch (Exception | AssertionError retryableFixtureFailure) {
+        lastFailure = retryableFixtureFailure;
         Thread.sleep(300);
       }
     }
-    fail("Real server scenario exceeded its recovery deadline");
+    StringBuilder types = new StringBuilder();
+    for (int depth = 0;
+        lastFailure != null && depth < 6;
+        depth++, lastFailure = lastFailure.getCause())
+      types.append(lastFailure.getClass().getSimpleName()).append(" ");
+    fail("Real server scenario exceeded its recovery deadline; failure types: " + types);
   }
 
   static void control(String product, String action) throws Exception {

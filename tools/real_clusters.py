@@ -81,7 +81,7 @@ def main():
     image = IMAGES[product]
     command(["docker", "pull", image], 300)
     digest = command(["docker", "image", "inspect", "--format", "{{index .RepoDigests 0}}", image])
-    command(["docker", "network", "create", "--internal", network])
+    command(["docker", "network", "create", network])
     with tempfile.TemporaryDirectory(prefix="driverkit-it-") as temporary:
         root = Path(temporary)
 
@@ -149,6 +149,13 @@ def main():
             output = Path("driverkit-integration-tests/target/real-cluster-evidence.json")
             output.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
         finally:
+            # State-only diagnostics: never dump environment, credential configuration or server logs.
+            for container in containers:
+                try:
+                    state = command(["docker", "inspect", "--format", "{{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}", container])
+                    print("Fixture state:", product, state)
+                except Exception:
+                    pass
             # Only the freshly-created, labelled containers are ever removed.
             for container in reversed(containers):
                 try:
