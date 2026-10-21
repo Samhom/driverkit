@@ -1,0 +1,322 @@
+{
+  "schema_version": 1,
+  "sdk_version": "0.1.0-SNAPSHOT",
+  "combinations": [
+    {
+      "module": "driverkit-core",
+      "driver": {
+        "artifact": "JDK",
+        "version": "8+"
+      },
+      "server": "无服务端",
+      "jdk": 8,
+      "status": "verified",
+      "scope": "核心运行",
+      "reason": "Java 8 smoke；17/21 生命周期、并发和期限回归。",
+      "evidence": {
+        "url": "https://github.com/Samhom/driverkit/actions/runs/39602884827",
+        "command": "javac -cp driverkit-core/target/driverkit-core-0.1.0-SNAPSHOT.jar -d .local/java8 .ci/Java8Smoke.java && java -cp .local/java8:driverkit-core/target/driverkit-core-0.1.0-SNAPSHOT.jar Java8Smoke"
+      }
+    },
+    {
+      "module": "driverkit-core",
+      "driver": {
+        "artifact": "JDK",
+        "version": "8+"
+      },
+      "server": "无服务端",
+      "jdk": 17,
+      "status": "verified",
+      "scope": "核心运行",
+      "reason": "Java 8 smoke；17/21 生命周期、并发和期限回归。",
+      "evidence": {
+        "url": "https://github.com/Samhom/driverkit/actions/runs/39602884827",
+        "command": "mvn -B -s .mvn/settings.xml -Pexperimental-grpc verify"
+      }
+    },
+    {
+      "module": "driverkit-core",
+      "driver": {
+        "artifact": "JDK",
+        "version": "8+"
+      },
+      "server": "无服务端",
+      "jdk": 21,
+      "status": "verified",
+      "scope": "核心运行",
+      "reason": "Java 8 smoke；17/21 生命周期、并发和期限回归。",
+      "evidence": {
+        "url": "https://github.com/Samhom/driverkit/actions/runs/39602884827",
+        "command": "mvn -B -s .mvn/settings.xml -Pexperimental-grpc verify"
+      }
+    },
+    {
+      "module": "driverkit-redis-jedis",
+      "driver": {
+        "artifact": "jedis",
+        "version": "8.0.2",
+        "property": "jedis.version"
+      },
+      "server": "Redis 8.2.3",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "单节点认证与恢复",
+      "reason": "已有真实服务 CI 套件；本行须在对应提交实际通过后升级。"
+    },
+    {
+      "module": "driverkit-redis-jedis",
+      "driver": {
+        "artifact": "jedis",
+        "version": "8.0.2",
+        "property": "jedis.version"
+      },
+      "server": "Redis 8.2.3",
+      "jdk": 21,
+      "status": "theoretical",
+      "scope": "单节点认证与恢复",
+      "reason": "JDK 21 构建通过；该服务组合尚未运行真实集群回归。"
+    },
+    {
+      "module": "driverkit-redis-jedis",
+      "driver": {
+        "artifact": "jedis",
+        "version": "8.0.2",
+        "property": "jedis.version"
+      },
+      "server": "Redis 8.2.3",
+      "jdk": 8,
+      "status": "unsupported",
+      "scope": "适配模块运行",
+      "reason": "适配模块使用 Java 17 字节码；core 的 Java 8 能力不代表本模块支持 Java 8。"
+    },
+    {
+      "module": "driverkit-elasticsearch",
+      "driver": {
+        "artifact": "elasticsearch-java",
+        "version": "9.5.5",
+        "property": "elasticsearch.version"
+      },
+      "server": "Elasticsearch 9.5.5",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "单节点认证与恢复",
+      "reason": "已有真实服务 CI 套件；本行须在对应提交实际通过后升级。"
+    },
+    {
+      "module": "driverkit-elasticsearch",
+      "driver": {
+        "artifact": "elasticsearch-java",
+        "version": "9.5.5",
+        "property": "elasticsearch.version"
+      },
+      "server": "Elasticsearch 9.5.5",
+      "jdk": 21,
+      "status": "theoretical",
+      "scope": "单节点认证与恢复",
+      "reason": "JDK 21 构建通过；该服务组合尚未运行真实集群回归。"
+    },
+    {
+      "module": "driverkit-elasticsearch",
+      "driver": {
+        "artifact": "elasticsearch-java",
+        "version": "9.5.5",
+        "property": "elasticsearch.version"
+      },
+      "server": "Elasticsearch 9.5.5",
+      "jdk": 8,
+      "status": "unsupported",
+      "scope": "适配模块运行",
+      "reason": "适配模块使用 Java 17 字节码；core 的 Java 8 能力不代表本模块支持 Java 8。"
+    },
+    {
+      "module": "driverkit-couchbase",
+      "driver": {
+        "artifact": "java-client",
+        "version": "3.13.0",
+        "property": "couchbase.version"
+      },
+      "server": "Couchbase Community 7.6.2",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "单节点认证与恢复",
+      "reason": "已有真实服务 CI 套件；本行须在对应提交实际通过后升级。"
+    },
+    {
+      "module": "driverkit-couchbase",
+      "driver": {
+        "artifact": "java-client",
+        "version": "3.13.0",
+        "property": "couchbase.version"
+      },
+      "server": "Couchbase Community 7.6.2",
+      "jdk": 21,
+      "status": "theoretical",
+      "scope": "单节点认证与恢复",
+      "reason": "JDK 21 构建通过；该服务组合尚未运行真实集群回归。"
+    },
+    {
+      "module": "driverkit-couchbase",
+      "driver": {
+        "artifact": "java-client",
+        "version": "3.13.0",
+        "property": "couchbase.version"
+      },
+      "server": "Couchbase Community 7.6.2",
+      "jdk": 8,
+      "status": "unsupported",
+      "scope": "适配模块运行",
+      "reason": "适配模块使用 Java 17 字节码；core 的 Java 8 能力不代表本模块支持 Java 8。"
+    },
+    {
+      "module": "driverkit-rocketmq",
+      "driver": {
+        "artifact": "rocketmq-client",
+        "version": "5.5.1",
+        "property": "rocketmq.version"
+      },
+      "server": "RocketMQ 5.5.0",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "单节点认证与恢复",
+      "reason": "已有真实服务 CI 套件；本行须在对应提交实际通过后升级。"
+    },
+    {
+      "module": "driverkit-rocketmq",
+      "driver": {
+        "artifact": "rocketmq-client",
+        "version": "5.5.1",
+        "property": "rocketmq.version"
+      },
+      "server": "RocketMQ 5.5.1",
+      "jdk": 21,
+      "status": "theoretical",
+      "scope": "单节点认证与恢复",
+      "reason": "JDK 21 构建通过；该服务组合尚未运行真实集群回归。"
+    },
+    {
+      "module": "driverkit-rocketmq",
+      "driver": {
+        "artifact": "rocketmq-client",
+        "version": "5.5.1",
+        "property": "rocketmq.version"
+      },
+      "server": "RocketMQ 5.5.1",
+      "jdk": 8,
+      "status": "unsupported",
+      "scope": "适配模块运行",
+      "reason": "适配模块使用 Java 17 字节码；core 的 Java 8 能力不代表本模块支持 Java 8。"
+    },
+    {
+      "module": "driverkit-redis-jedis",
+      "driver": {
+        "artifact": "jedis",
+        "version": "8.0.2",
+        "property": "jedis.version"
+      },
+      "server": "Redis 7.x",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "受管单节点",
+      "reason": "RESP2 协议测试通过；7.x 真实服务组合待验证。"
+    },
+    {
+      "module": "driverkit-elasticsearch",
+      "driver": {
+        "artifact": "elasticsearch-java",
+        "version": "9.5.5",
+        "property": "elasticsearch.version"
+      },
+      "server": "Elasticsearch 7.x",
+      "jdk": 17,
+      "status": "unsupported",
+      "scope": "跨主要版本",
+      "reason": "主线仅维护 9.x 客户端组合；7.x 需独立代际适配。"
+    },
+    {
+      "module": "driverkit-couchbase",
+      "driver": {
+        "artifact": "java-client",
+        "version": "3.13.0",
+        "property": "couchbase.version"
+      },
+      "server": "Couchbase Server 8.x",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "KV / collections",
+      "reason": "未执行该服务端版本的真实回归。"
+    },
+    {
+      "module": "driverkit-rocketmq",
+      "driver": {
+        "artifact": "rocketmq-client",
+        "version": "5.5.1",
+        "property": "rocketmq.version"
+      },
+      "server": "RocketMQ 4.9.x",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "Remoting 协议",
+      "reason": "协议兼容不能代替认证、消费恢复及 Broker 版本实测。"
+    },
+    {
+      "module": "driverkit-rocketmq-transport",
+      "driver": {
+        "artifact": "rocketmq-remoting",
+        "version": "5.5.1",
+        "property": "rocketmq.version"
+      },
+      "server": "本地 TLS 服务",
+      "jdk": 17,
+      "status": "verified",
+      "scope": "证书链与服务器身份",
+      "reason": "固定输入重建；可信链、未知 CA、过期、错误 DNS 与 IP SAN 握手验证。",
+      "evidence": {
+        "url": "https://github.com/Samhom/driverkit/actions/runs/39602884827",
+        "command": "mvn -B -s .mvn/settings.xml -Pexperimental-grpc verify"
+      }
+    },
+    {
+      "module": "driverkit-rocketmq-transport",
+      "driver": {
+        "artifact": "rocketmq-remoting",
+        "version": "5.5.1",
+        "property": "rocketmq.version"
+      },
+      "server": "RocketMQ 5.5.1 TLS",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "真实 Broker TLS",
+      "reason": "本地真实握手通过；未运行真实 Broker TLS/mTLS 拓扑。"
+    },
+    {
+      "module": "driverkit-rocketmq-grpc",
+      "driver": {
+        "artifact": "rocketmq-client-java-noshade",
+        "version": "5.2.2",
+        "property": "rocketmq.grpc.version"
+      },
+      "server": "本地 gRPC 服务",
+      "jdk": 17,
+      "status": "verified",
+      "scope": "实验模块传输",
+      "reason": "认证拒绝、无启动重试、断线重连、未知 CA 拒绝；默认隔离。",
+      "evidence": {
+        "url": "https://github.com/Samhom/driverkit/actions/runs/39602884827",
+        "command": "mvn -B -s .mvn/settings.xml -Pexperimental-grpc verify"
+      }
+    },
+    {
+      "module": "driverkit-rocketmq-grpc",
+      "driver": {
+        "artifact": "rocketmq-client-java-noshade",
+        "version": "5.2.2",
+        "property": "rocketmq.grpc.version"
+      },
+      "server": "RocketMQ 5.5.1 Proxy",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "实验模块消费",
+      "reason": "尚无真实 Proxy 消费恢复和位点证据，需人工安全评审。"
+    }
+  ]
+}

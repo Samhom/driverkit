@@ -40,6 +40,11 @@ jobs:
           java-version: ${{ matrix.java }}
       - name: Compile and test
         run: mvn -B -ntp -s .mvn/settings.xml -Dmaven.repo.local="$GITHUB_WORKSPACE/.m2-cache" verify
+      - name: Compatibility contract
+        if: matrix.java == '17'
+        run: |
+          python3 tools/check_compatibility.py
+          python3 -m unittest discover -s tools -p 'test_check_compatibility.py'
       - name: Formatting
         run: mvn -B -ntp -s .mvn/settings.xml -Dmaven.repo.local="$GITHUB_WORKSPACE/.m2-cache" com.spotify.fmt:fmt-maven-plugin:2.25:check
       - name: Resolve audit inventory
