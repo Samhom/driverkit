@@ -162,6 +162,7 @@
     </plugins>
   </build>
   <profiles>
+    <profile><id>real-clusters</id><modules><module>driverkit-integration-tests</module></modules></profile>
     <profile>
       <id>experimental-grpc</id>
       <modules>

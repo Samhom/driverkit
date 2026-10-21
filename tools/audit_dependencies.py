@@ -25,7 +25,7 @@ def coordinates(root: Path, repository: Path, experimental: bool):
     project = ET.parse(root / "pom.xml").getroot()
     modules = [node.text for node in project.findall("m:modules/m:module", ns)]
     if experimental:
-        modules += [node.text for node in project.findall("m:profiles/m:profile/m:modules/m:module", ns)]
+        modules += [node.text for node in project.findall("m:profiles/m:profile[m:id='experimental-grpc']/m:modules/m:module", ns)]
     files = [root / module / "target/dependencies.json" for module in modules]
     jars = set()
     if not files or len(files) > 64:

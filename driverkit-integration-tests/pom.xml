@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+  <artifactId>driverkit-integration-tests</artifactId>
+  <dependencies>
+    <dependency><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-redis-jedis</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+    <dependency><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-elasticsearch</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+    <dependency><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-couchbase</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+    <dependency><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-rocketmq</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+  </dependencies>
+  <build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-failsafe-plugin</artifactId><version>3.5.4</version><configuration><useModulePath>false</useModulePath><forkedProcessTimeoutInSeconds>480</forkedProcessTimeoutInSeconds></configuration><executions><execution><goals><goal>integration-test</goal><goal>verify</goal></goals></execution></executions></plugin></plugins></build>
+</project>

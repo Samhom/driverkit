@@ -9,3 +9,4 @@
 .env.*
 !.env.example
 config.local.*
+__pycache__/

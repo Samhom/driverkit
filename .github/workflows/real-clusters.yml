@@ -1,0 +1,27 @@
+name: Real cluster recovery
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        product: [redis, elasticsearch, couchbase, rocketmq]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Authenticated real server, network faults, restart and rotation
+        run: python3 tools/real_clusters.py '${{ matrix.product }}'
+      - name: Evidence
+        run: cat driverkit-integration-tests/target/real-cluster-evidence.json
