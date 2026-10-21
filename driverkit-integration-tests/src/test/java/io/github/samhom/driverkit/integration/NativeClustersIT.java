@@ -77,13 +77,16 @@ class NativeClustersIT {
             client.set("driverkit-it", "value");
             assertEquals("value", client.get("driverkit-it"));
           },
-          password ->
-              admin.sendCommand(
-                  redis.clients.jedis.Protocol.Command.ACL,
-                  "SETUSER",
-                  "driverkit",
-                  "resetpass",
-                  ">" + password));
+          password -> {
+            // Fixture administration must not reuse idle sockets from before the server restart.
+            admin.getPool().clear();
+            admin.sendCommand(
+                redis.clients.jedis.Protocol.Command.ACL,
+                "SETUSER",
+                "driverkit",
+                "resetpass",
+                ">" + password);
+          });
     }
   }
 
@@ -142,9 +145,7 @@ class NativeClustersIT {
                 8091,
                 "/settings/rbac/users/local/driverkit",
                 "PUT",
-                "password="
-                    + password
-                    + "&roles=data_reader%5Bdriverkit-it%5D%2Cdata_writer%5Bdriverkit-it%5D",
+                "password=" + password + "&roles=bucket_full_access%5Bdriverkit-it%5D",
                 "application/x-www-form-urlencoded",
                 "Administrator"));
   }

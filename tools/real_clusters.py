@@ -16,6 +16,7 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
+import urllib.error
 
 IMAGES = {
     "redis": "redis:8.2.3",
@@ -50,9 +51,17 @@ def http(port, path, method="GET", data=None, username=None, password=None, json
         data = json.dumps(data).encode()
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=data, headers=headers, method=method)
-    with urllib.request.build_opener(NoRedirect(), urllib.request.ProxyHandler({})).open(request, timeout=3) as response:
-        if len(response.read(1024 * 1024 + 1)) > 1024 * 1024:
-            raise RuntimeError("Oversized fixture response")
+    try:
+        with urllib.request.build_opener(NoRedirect(), urllib.request.ProxyHandler({})).open(request, timeout=3) as response:
+            if len(response.read(1024 * 1024 + 1)) > 1024 * 1024:
+                raise RuntimeError("Oversized fixture response")
+    except urllib.error.HTTPError as error:
+        # Field names only: error values could echo credential material.
+        try:
+            fields = list(json.loads(error.read(8192)).keys())
+        except Exception:
+            fields = []
+        raise RuntimeError(f"Fixture HTTP {method} {path}: status={error.code}, fields={fields}") from None
 
 
 def ready(check, seconds=180):
@@ -111,8 +120,8 @@ def main():
                 command(["docker", "start", name])
                 ready(lambda: command(["docker", "exec", name, "redis-cli", "PING"], 5))
             elif product == "elasticsearch":
-                create(name, [9200], ["-Ediscovery.type=single-node", "-Expack.security.enabled=true", "-Expack.security.http.ssl.enabled=false", "-Expack.security.transport.ssl.enabled=false", "-Expack.ml.enabled=false"],
-                       {"ELASTIC_PASSWORD": admin_password, "ES_JAVA_OPTS": "-Xms512m -Xmx512m"})
+                create(name, [9200], [],
+                       {"ELASTIC_PASSWORD": admin_password, "ES_JAVA_OPTS": "-Xms512m -Xmx512m", "discovery.type": "single-node", "xpack.security.enabled": "true", "xpack.security.http.ssl.enabled": "false", "xpack.security.transport.ssl.enabled": "false", "xpack.ml.enabled": "false"})
                 command(["docker", "start", name])
                 ready(lambda: http(9200, "/", username="elastic", password=admin_password))
                 http(9200, "/_security/role/driverkit", "PUT", {"cluster": ["monitor"], "indices": [{"names": ["driverkit-it"], "privileges": ["read", "write", "create_index"]}]}, "elastic", admin_password, json_body=True)
@@ -126,7 +135,7 @@ def main():
                 http(8091, "/node/controller/setupServices", "POST", {"services": "kv"})
                 http(8091, "/settings/web", "POST", {"username": "Administrator", "password": admin_password, "port": "SAME"})
                 http(8091, "/pools/default/buckets", "POST", {"name": "driverkit-it", "ramQuotaMB": "128", "replicaNumber": "0", "bucketType": "couchbase"}, "Administrator", admin_password)
-                http(8091, "/settings/rbac/users/local/driverkit", "PUT", {"password": password, "roles": "data_reader[driverkit-it],data_writer[driverkit-it]"}, "Administrator", admin_password)
+                http(8091, "/settings/rbac/users/local/driverkit", "PUT", {"password": password, "roles": "bucket_full_access[driverkit-it]"}, "Administrator", admin_password)
             else:
                 namesrv = f"driverkit-it-{run}-namesrv"
                 create(namesrv, [9876], ["sh", "mqnamesrv"], {"JAVA_OPT_EXT": "-Xms128m -Xmx128m -Xmn64m"})
