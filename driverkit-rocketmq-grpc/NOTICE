@@ -1,0 +1,4 @@
+DriverKit RocketMQ gRPC includes Apache RocketMQ Java client noshade 5.2.2.
+Apache License 2.0, https://github.com/apache/rocketmq-clients/tree/java-5.2.2/java
+Modifications: remove trust-all TLS; limit inbound gRPC messages to 16 MiB.
+Build inputs are SHA-256 pinned. The official fat JAR is not used.

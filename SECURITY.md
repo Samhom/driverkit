@@ -28,11 +28,11 @@ python3 tools/audit_dependencies.py
 
 ## gRPC 试验模块
 
-当前 RocketMQ gRPC 上游 5.2.2 发布 JAR 内嵌了旧 gRPC/Netty，包含 Netty 4.1.79 的原生组件元数据。普通依赖管理覆盖不了重定位进 JAR 的类。相关安全公告包括 [GHSA-prj3-ccx8-p6x4](https://github.com/advisories/GHSA-prj3-ccx8-p6x4)。
+`driverkit-rocketmq-grpc` 改用官方 `rocketmq-client-java-noshade:5.2.2`，不再使用内嵌旧依赖的 fat JAR。固定 SHA-256 的二进制/源码输入重建 `RpcClientImpl`，移除 trust-all TLS，将入站消息限制为 16 MiB，并适配现代 gRPC 的解析器 scheme。域名按原始 authority 校验；IP 通道使用目标 IP 验证证书 IP SAN，TLS 多 IP 共用通道因无法逐一绑定身份而明确拒绝。
 
-因此 `driverkit-rocketmq-grpc` 默认不构建、不纳入主线 BOM，也没有生产可用声明。需要上游发布修复后的构件或完成独立补丁与集群验证；当前状态为**需人工安全评审**。
+实际依赖由 gRPC/OTel BOM 与固定的 Protobuf 4.36.2、Guava 33.7.2、Zstd 1.5.7-24、LZ4 1.12 管理，不携带日志后端。独立 CI 执行 `-Pexperimental-grpc` 构建、认证拒绝、原生通道重连、未知 CA 拒绝与内嵌组件审查。应用不可再引入旧 fat JAR 或原版 noshade，否则产生同名类歧义。
 
-研究构建可显式使用 `-Pexperimental-grpc`；审查此配置必须重新生成其依赖树，并执行 `python3 tools/audit_dependencies.py --include-experimental`。不能将主线审查结果用于该配置。
+模块仍默认隔离，不进入主线 BOM。受管消费者的真实 Proxy 认证、重平衡、位点和恢复需要真实集群回归后才能获得生产支持；当前为**需人工安全评审**。执行 `python3 tools/audit_dependencies.py --include-experimental` 前必须重新生成相同配置的依赖清单。
 
 ## RocketMQ Remoting 传输限制
 

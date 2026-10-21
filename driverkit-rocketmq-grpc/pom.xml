@@ -15,8 +15,61 @@
     </dependency>
     <dependency>
       <groupId>org.apache.rocketmq</groupId>
-      <artifactId>rocketmq-client-java</artifactId>
-      <version>${rocketmq.grpc.version}</version>
+      <artifactId>rocketmq-client-java-noshade</artifactId>
+      <version>${rocketmq.grpc.version}</version><scope>provided</scope><optional>true</optional>
+      <exclusions>
+        <exclusion><groupId>ch.qos.logback</groupId><artifactId>logback-core</artifactId></exclusion>
+        <exclusion><groupId>ch.qos.logback</groupId><artifactId>logback-classic</artifactId></exclusion>
+        <exclusion><groupId>org.lz4</groupId><artifactId>lz4-java</artifactId></exclusion>
+        <exclusion><groupId>io.opentelemetry</groupId><artifactId>opentelemetry-exporter-otlp-metrics</artifactId></exclusion>
+      </exclusions>
     </dependency>
+    <dependency><groupId>at.yawk.lz4</groupId><artifactId>lz4-java</artifactId></dependency>
+    <dependency><groupId>com.google.protobuf</groupId><artifactId>protobuf-java-util</artifactId><version>4.36.2</version></dependency>
+    <dependency><groupId>com.google.protobuf</groupId><artifactId>protobuf-java</artifactId><version>4.36.2</version></dependency>
+    <dependency><groupId>com.google.guava</groupId><artifactId>guava</artifactId><version>33.7.2-jre</version></dependency>
+    <dependency><groupId>org.apache.commons</groupId><artifactId>commons-lang3</artifactId><version>3.20.0</version></dependency>
+    <dependency><groupId>com.github.luben</groupId><artifactId>zstd-jni</artifactId><version>1.5.7-24</version></dependency>
+
+    <dependency><groupId>org.apache.rocketmq</groupId><artifactId>rocketmq-client-apis</artifactId><version>5.2.2</version></dependency>
+    <dependency><groupId>org.apache.rocketmq</groupId><artifactId>rocketmq-proto</artifactId><version>2.2.0</version></dependency>
+    <dependency><groupId>jakarta.annotation</groupId><artifactId>jakarta.annotation-api</artifactId><version>1.3.5</version></dependency>
+    <dependency><groupId>io.grpc</groupId><artifactId>grpc-netty-shaded</artifactId></dependency>
+    <dependency><groupId>io.grpc</groupId><artifactId>grpc-protobuf</artifactId></dependency>
+    <dependency><groupId>io.grpc</groupId><artifactId>grpc-stub</artifactId></dependency>
+    <dependency><groupId>io.opentelemetry</groupId><artifactId>opentelemetry-api</artifactId></dependency>
+    <dependency><groupId>io.opentelemetry</groupId><artifactId>opentelemetry-sdk</artifactId></dependency>
+    <dependency><groupId>io.opentelemetry</groupId><artifactId>opentelemetry-exporter-otlp</artifactId></dependency>
+    <dependency><groupId>net.javacrumbs.future-converter</groupId><artifactId>future-converter-java8-guava</artifactId><version>1.2.0</version></dependency>
   </dependencies>
+  <build><plugins>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><version>3.8.1</version><executions><execution>
+      <id>fixed-upstream-inputs</id><phase>generate-sources</phase><goals><goal>copy</goal></goals><configuration><artifactItems>
+        <artifactItem><groupId>org.apache.rocketmq</groupId><artifactId>rocketmq-client-java-noshade</artifactId><version>5.2.2</version><type>jar</type><outputDirectory>${project.build.directory}/upstream</outputDirectory></artifactItem>
+        <artifactItem><groupId>org.apache.rocketmq</groupId><artifactId>rocketmq-client-java-noshade</artifactId><version>5.2.2</version><type>jar</type><classifier>sources</classifier><outputDirectory>${project.build.directory}/upstream</outputDirectory></artifactItem>
+      </artifactItems></configuration>
+    </execution></executions></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><version>3.2.0</version><executions><execution>
+      <id>verified-tls-patch</id><phase>generate-sources</phase><goals><goal>run</goal></goals><configuration><target>
+        <checksum file="${project.build.directory}/upstream/rocketmq-client-java-noshade-5.2.2.jar" algorithm="SHA-256" property="upstream.binary.sha"/>
+        <checksum file="${project.build.directory}/upstream/rocketmq-client-java-noshade-5.2.2-sources.jar" algorithm="SHA-256" property="upstream.sources.sha"/>
+        <fail message="Upstream inputs changed: review the TLS patch before building"><condition><not><and>
+          <equals arg1="${upstream.binary.sha}" arg2="88980f5c0a607aef023b195e2ff8cfd97248a99e1094b72cb4dc8d2aec348d9d"/>
+          <equals arg1="${upstream.sources.sha}" arg2="633bce7b6e1c1a11b77276af7841f97b7bb51b0eaa2efa047e111575db345ffc"/>
+        </and></not></condition></fail>
+        <unzip src="${project.build.directory}/upstream/rocketmq-client-java-noshade-5.2.2.jar" dest="${project.build.outputDirectory}"><patternset><exclude name="org/apache/rocketmq/client/java/rpc/RpcClientImpl*.class"/><exclude name="META-INF/MANIFEST.MF"/></patternset></unzip>
+        <unzip src="${project.build.directory}/upstream/rocketmq-client-java-noshade-5.2.2-sources.jar" dest="${project.build.directory}/generated-sources/upstream"><patternset><include name="org/apache/rocketmq/client/java/rpc/RpcClientImpl.java"/></patternset></unzip>
+        <replace file="${project.build.directory}/generated-sources/upstream/org/apache/rocketmq/client/java/rpc/RpcClientImpl.java" failOnNoReplacements="true"
+          token="builder.trustManager(InsecureTrustManagerFactory.INSTANCE);" value="// DriverKit: use system trust roots; gRPC verifies the original authority."/>
+        <replace file="${project.build.directory}/generated-sources/upstream/org/apache/rocketmq/client/java/rpc/RpcClientImpl.java" failOnNoReplacements="true"
+          token="private static final int GRPC_MAX_MESSAGE_SIZE = Integer.MAX_VALUE;" value="private static final int GRPC_MAX_MESSAGE_SIZE = 16 * 1024 * 1024;"/>
+        <replace file="${project.build.directory}/generated-sources/upstream/org/apache/rocketmq/client/java/rpc/RpcClientImpl.java" failOnNoReplacements="true"
+          token="channelBuilder.nameResolverFactory(ipNameResolverFactory);" value="io.github.samhom.driverkit.rocketmq.grpc.GrpcResolution.configure(channelBuilder, endpoints, socketAddresses, ipNameResolverFactory, sslEnabled);"/>
+      </target></configuration>
+    </execution></executions></plugin>
+    <plugin><groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId><version>3.6.1</version><executions><execution>
+      <id>patched-source</id><phase>generate-sources</phase><goals><goal>add-source</goal></goals><configuration><sources><source>${project.build.directory}/generated-sources/upstream</source></sources></configuration>
+    </execution></executions></plugin>
+    <plugin><groupId>com.spotify.fmt</groupId><artifactId>fmt-maven-plugin</artifactId><configuration><sourceDirectory>${project.basedir}/src/main/java</sourceDirectory></configuration></plugin>
+  </plugins></build>
 </project>

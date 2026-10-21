@@ -11,7 +11,7 @@
 | RocketMQ | Remoting Client 5.5.1 | Java 17+ 适配模块 | 编译、参数边界、共用消费组控制器；实际 Broker 联调由接入方执行 |
 | Apollo | Client 2.5.0 | Java 17+ 集成模块 | 原子单文档、字段白名单、坏配置拒绝、订阅释放 |
 | Spring Boot | 3.5.16 | Java 17+ | 属性绑定、Bean 创建、容器关闭 |
-| gRPC 试验模块 | RocketMQ Java Client 5.2.2 | Java 17+ | 仅显式试验配置；有未解决的上游内嵌组件风险 |
+| gRPC 试验模块 | RocketMQ Java Client 5.2.2 | Java 17+ | 官方 noshade 固定输入重建；安全依赖、认证拒绝和通道重连；真实 Proxy 消费恢复待验证 |
 
 JDK 17 与 21 由 Linux CI 执行主线构建；core 使用 Java 8 字节码，并提供独立的 Java 8 运行检查。
 
