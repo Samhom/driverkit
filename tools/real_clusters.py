@@ -170,7 +170,7 @@ def main():
                 try:
                     owner = command(["docker", "inspect", "--format", '{{index .Config.Labels "driverkit.it.run"}}', container])
                     if owner == run:
-                        command(["docker", "rm", "-f", container])
+                        command(["docker", "rm", "-f", "-v", container])
                 except Exception:
                     pass
             command(["docker", "network", "rm", network])
