@@ -19,13 +19,15 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def coordinates(root: Path, repository: Path, experimental: bool):
+def coordinates(root: Path, repository: Path, experimental: bool, legacy: bool = False):
     found = set()
     ns = {"m": "http://maven.apache.org/POM/4.0.0"}
     project = ET.parse(root / "pom.xml").getroot()
     modules = [node.text for node in project.findall("m:modules/m:module", ns)]
     if experimental:
         modules += [node.text for node in project.findall("m:profiles/m:profile[m:id='experimental-grpc']/m:modules/m:module", ns)]
+    if legacy:
+        modules += [node.text for node in project.findall("m:profiles/m:profile[m:id='legacy-drivers']/m:modules/m:module", ns)]
     files = [root / module / "target/dependencies.json" for module in modules]
     jars = set()
     if not files or len(files) > 64:
@@ -44,6 +46,8 @@ def coordinates(root: Path, repository: Path, experimental: bool):
     for path in files:
         if not path.resolve().is_relative_to(root):
             raise ValueError("Dependency tree must stay inside the workspace")
+        if path.stat().st_mtime_ns < max((root / "pom.xml").stat().st_mtime_ns, (path.parent.parent / "pom.xml").stat().st_mtime_ns):
+            raise ValueError("Dependency inventory is stale; regenerate all selected module trees: " + path.parent.parent.name)
         if path.stat().st_size > 10 * 1024 * 1024:
             raise ValueError("Dependency tree is oversized")
         visit(json.loads(path.read_text(encoding="utf-8")))
@@ -78,8 +82,8 @@ def coordinates(root: Path, repository: Path, experimental: bool):
     return sorted(found), modules, embedded
 
 
-def audit(root: Path, repository: Path, experimental: bool):
-    packages, modules, embedded = coordinates(root, repository, experimental)
+def audit(root: Path, repository: Path, experimental: bool, legacy: bool = False):
+    packages, modules, embedded = coordinates(root, repository, experimental, legacy)
     opener = urllib.request.build_opener(NoRedirect())
     findings = []
     for offset in range(0, len(packages), 100):
@@ -97,7 +101,7 @@ def audit(root: Path, repository: Path, experimental: bool):
             vulnerabilities = result.get("vulns", [])
             if vulnerabilities:
                 findings.append({"package": name, "version": version, "advisories": sorted(item["id"] for item in vulnerabilities)})
-    return {"source": "https://osv.dev", "modules_checked": modules, "packages_checked": len(packages), "embedded_components_detected": embedded, "experimental_profiles_included": experimental, "findings": findings}
+    return {"source": "https://osv.dev", "modules_checked": modules, "packages_checked": len(packages), "embedded_components_detected": embedded, "experimental_profiles_included": experimental, "legacy_profiles_included": legacy, "findings": findings}
 
 
 def main():
@@ -105,9 +109,10 @@ def main():
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--repository", type=Path)
     parser.add_argument("--include-experimental", action="store_true")
+    parser.add_argument("--include-legacy", action="store_true")
     args = parser.parse_args()
     root = args.root.resolve()
-    result = audit(root, (args.repository or root / ".m2-cache").resolve(), args.include_experimental)
+    result = audit(root, (args.repository or root / ".m2-cache").resolve(), args.include_experimental, args.include_legacy)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 1 if result["findings"] else 0
 

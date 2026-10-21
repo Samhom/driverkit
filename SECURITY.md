@@ -42,6 +42,18 @@ python3 tools/audit_dependencies.py
 
 适配器排除原版 `rocketmq-remoting`，应用不得再从其他依赖引入该原版构件，否则同名类会产生类路径歧义。私有 CA 由部署配置 JDK truststore；补丁不读取上游的 `tls.test.mode.enable`、`tls.client.authServer` 等不安全开关，也暂不支持客户端证书。回环真实握手测试覆盖可信链、未知 CA、错误 DNS、缺少 IP SAN 与过期证书。真实 Broker TLS、客户端证书及目标网络策略仍需目标环境验证。`tls=false` 必须由可信配置显式选择并使用受保护网络。
 
+## 旧代际迁移模块
+
+`legacy-drivers` 默认关闭，Jedis 3 / HLRC 7 / Couchbase SDK 2 / Remoting 4 的原生依赖仅用于隔离编译，声明为 `provided + optional`；应用必须显式提供并审查旧驱动。主线 BOM 不传递这些迁移模块。它们不会修补或恢复已 EOL 厂商版本的长期支持。
+
+按产品提供独立 BOM，共用 legacy 安全补丁；它们不会同时替换所有产品的原生代际。已修复可替换的 Fastjson、日志、反射工具、压缩和 YAML 依赖，构建与发布 BOM 的版本一致性及原生依赖隔离由 CI 校验。扫描器拒绝旧于 POM 的依赖清单，避免使用失败构建留下的旧结果。
+
+ES 7.17 的支持已于 [2026-01-15 结束](https://www.elastic.co/support/eol)，[Couchbase 文档](https://docs.couchbase.com/java-sdk/3.12/howtos/encrypting-using-sdk.html)也明确 SDK 2 已 EOL。旧嵌入组件不能用普通 BOM 升级。Couchbase 2 和 Remoting 4 的未经验证 TLS 路径在解析凭据前被拒绝；仅明确选择的受保护网络可用于迁移，TLS 优先迁往主线适配器。
+
+2026-10-21 的独立扫描剩余 20 个风险组件坐标，均来自旧 Couchbase 组件的 Netty 4.1.73、Jackson 2.12.6、Snappy 0.4 元数据；普通 BOM 无法替换这些重定位内容。完整发现保存在 [legacy-dependency-audit.json](docs/legacy-dependency-audit.json)，报告明确 `production_approved=false`。主线及实验 gRPC 的独立扫描没有这些旧构件。
+
+审查旧配置须重新生成 `-Plegacy-drivers` 的依赖树并执行 `python3 tools/audit_dependencies.py --include-legacy`。该命令报告全部发现并返回失败，不用允许列表隐藏漏洞，也不能以主线审查通过替代旧应用审查。旧代际生产接入当前均**需人工安全评审**。
+
 ## 接入方复核
 
 配置中心服务端授权、资源目录来源、凭据轮换/撤销、内网出口策略、真实 TLS、服务端资源权限、实际消息幂等与集群级并发语义需要在目标环境复核。此仓库没有引入或验证任何特定企业的内部权限实现。

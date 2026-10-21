@@ -1,0 +1,242 @@
+{
+  "source": "https://osv.dev",
+  "modules_checked": [
+    "driverkit-core",
+    "driverkit-settings",
+    "driverkit-config-apollo",
+    "driverkit-observe-micrometer",
+    "driverkit-observe-opentelemetry",
+    "driverkit-reactor",
+    "driverkit-redis-jedis",
+    "driverkit-elasticsearch",
+    "driverkit-couchbase",
+    "driverkit-rocketmq-transport",
+    "driverkit-rocketmq",
+    "driverkit-spring-boot",
+    "driverkit-examples",
+    "driverkit-bom",
+    "driverkit-redis-jedis3",
+    "driverkit-elasticsearch7",
+    "driverkit-couchbase2",
+    "driverkit-rocketmq4",
+    "driverkit-legacy-bom",
+    "driverkit-redis-jedis3-bom",
+    "driverkit-elasticsearch7-bom",
+    "driverkit-couchbase2-bom",
+    "driverkit-rocketmq4-bom"
+  ],
+  "packages_checked": 286,
+  "embedded_components_detected": 70,
+  "experimental_profiles_included": false,
+  "legacy_profiles_included": true,
+  "findings": [
+    {
+      "package": "com.fasterxml.jackson.core:jackson-core",
+      "version": "2.12.6",
+      "advisories": [
+        "GHSA-7hhh-6rmp-j9qf",
+        "GHSA-h46c-h94j-95f3",
+        "GHSA-r7wm-3cxj-wff9",
+        "GHSA-wf8f-6423-gfxg"
+      ]
+    },
+    {
+      "package": "com.fasterxml.jackson.core:jackson-databind",
+      "version": "2.12.6",
+      "advisories": [
+        "GHSA-3wrr-7qpf-2prh",
+        "GHSA-57j2-w4cx-62h2",
+        "GHSA-5gvw-p9qm-jgwh",
+        "GHSA-5jmj-h7xm-6q6v",
+        "GHSA-cxp5-3px4-pw24",
+        "GHSA-gx83-3vf8-gh7j",
+        "GHSA-hgj6-7826-r7m5",
+        "GHSA-j3rv-43j4-c7qm",
+        "GHSA-jjjh-jjxp-wpff",
+        "GHSA-rgv9-q543-rqg4",
+        "GHSA-rmj7-2vxq-3g9f",
+        "GHSA-vvgp-rfg2-7rr6",
+        "GHSA-wjgm-6hv5-3cvf",
+        "GHSA-wv8q-qhhj-9h54"
+      ]
+    },
+    {
+      "package": "io.netty:netty-codec",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-3p8m-j85q-pgmj",
+        "GHSA-558v-64gr-wgg4",
+        "GHSA-mj4r-2hfc-f8p6"
+      ]
+    },
+    {
+      "package": "io.netty:netty-codec-dns",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-cm33-6792-r9fm",
+        "GHSA-mfg7-5gfp-c4w3"
+      ]
+    },
+    {
+      "package": "io.netty:netty-codec-haproxy",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-cc37-9q2j-3hfv",
+        "GHSA-fx2c-96vj-985v",
+        "GHSA-h2qv-fj59-j46j",
+        "GHSA-q6cq-mhr2-jmr5",
+        "GHSA-wh89-7897-x99h"
+      ]
+    },
+    {
+      "package": "io.netty:netty-codec-http",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-269q-hmxg-m83q",
+        "GHSA-38f8-5428-x5cv",
+        "GHSA-4mp9-239f-g9hg",
+        "GHSA-57rv-r2g8-2cj3",
+        "GHSA-5jpm-x58v-624v",
+        "GHSA-6cqp-g7gg-8hr5",
+        "GHSA-6jqx-86gh-f27w",
+        "GHSA-84h7-rjj3-6jx4",
+        "GHSA-8c42-7qj2-3j46",
+        "GHSA-f6hv-jmp6-3vwv",
+        "GHSA-fghv-69vj-qj49",
+        "GHSA-gcjf-9mgh-3p7g",
+        "GHSA-hvcg-qmg6-jm4c",
+        "GHSA-jppx-w49h-x2qq",
+        "GHSA-m4cv-j2px-7723",
+        "GHSA-mvh2-crg5-v77c",
+        "GHSA-pwqr-wmgm-9rr8",
+        "GHSA-q4f6-jm68-57ww",
+        "GHSA-v8h7-rr48-vmmv",
+        "GHSA-xxqh-mfjm-7mv9"
+      ]
+    },
+    {
+      "package": "io.netty:netty-codec-http2",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-563q-j3cm-6jxm",
+        "GHSA-5x3r-wrvg-rp6q",
+        "GHSA-93wv-jw9v-4972",
+        "GHSA-c2gf-v879-257j",
+        "GHSA-c69g-56f8-xwqj",
+        "GHSA-f6hv-jmp6-3vwv",
+        "GHSA-prj3-ccx8-p6x4",
+        "GHSA-w9fj-cfpg-grvv",
+        "GHSA-xpw8-rcwv-8f8p"
+      ]
+    },
+    {
+      "package": "io.netty:netty-codec-mqtt",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-jfg9-48mv-9qgx"
+      ]
+    },
+    {
+      "package": "io.netty:netty-codec-redis",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-3244-j874-rhc2",
+        "GHSA-5w86-c3rq-vjj7",
+        "GHSA-6ghj-frrj-jjj3",
+        "GHSA-6jv9-x5w9-2ccm",
+        "GHSA-p9jm-q85p-7mcp",
+        "GHSA-rgrr-p7gp-5xj7"
+      ]
+    },
+    {
+      "package": "io.netty:netty-codec-smtp",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-jq43-27x9-3v86"
+      ]
+    },
+    {
+      "package": "io.netty:netty-codec-stomp",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-3g8r-4pfx-jmfh",
+        "GHSA-vhch-2wf3-m8rp"
+      ]
+    },
+    {
+      "package": "io.netty:netty-codec-xml",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-4qhr-g3c6-fcfx",
+        "GHSA-v74w-7mr3-4qg3"
+      ]
+    },
+    {
+      "package": "io.netty:netty-common",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-389x-839f-4rhx",
+        "GHSA-xq3w-v528-46rv"
+      ]
+    },
+    {
+      "package": "io.netty:netty-handler",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-3qp7-7mw8-wx86",
+        "GHSA-6mjq-h674-j845",
+        "GHSA-c4c3-7fpv-j4q5",
+        "GHSA-c653-97m9-rcg9",
+        "GHSA-fccg-mwvh-qqg4",
+        "GHSA-x4gw-5cx5-pgmh"
+      ]
+    },
+    {
+      "package": "io.netty:netty-handler-proxy",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-45q3-82m4-75jr"
+      ]
+    },
+    {
+      "package": "io.netty:netty-resolver-dns",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-5pvg-856g-cp85",
+        "GHSA-676x-f7gg-47vc",
+        "GHSA-xmv7-r254-6q78"
+      ]
+    },
+    {
+      "package": "io.netty:netty-transport-native-epoll",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-w573-9ffj-6ff9"
+      ]
+    },
+    {
+      "package": "io.netty:netty-transport-native-kqueue",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-w573-9ffj-6ff9"
+      ]
+    },
+    {
+      "package": "io.netty:netty-transport-sctp",
+      "version": "4.1.73.Final",
+      "advisories": [
+        "GHSA-2qj4-mmr9-4v2f",
+        "GHSA-5xrh-qmmq-w6ch"
+      ]
+    },
+    {
+      "package": "org.iq80.snappy:snappy",
+      "version": "0.4",
+      "advisories": [
+        "GHSA-8wh2-6qhj-h7j9"
+      ]
+    }
+  ],
+  "observed_on": "2026-10-21",
+  "production_approved": false
+}

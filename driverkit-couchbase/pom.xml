@@ -8,6 +8,7 @@
   </parent>
   <artifactId>driverkit-couchbase</artifactId>
   <dependencies>
+    <dependency><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-settings</artifactId><version>${project.version}</version></dependency>
     <dependency>
       <groupId>io.github.samhom.driverkit</groupId>
       <artifactId>driverkit-core</artifactId>

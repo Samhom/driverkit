@@ -40,6 +40,22 @@ class CompatibilityContractTest(unittest.TestCase):
         with patch.object(contract, "ROOT", root), self.assertRaisesRegex(ValueError, "drift|actual native"):
             contract.validate()
 
+    def test_legacy_native_dependency_cannot_leak_into_application(self):
+        root = self.fixture()
+        pom = root / "driverkit-redis-jedis3/pom.xml"
+        current = pom.read_text(encoding="utf-8")
+        pom.write_text(current.replace("<scope>provided</scope>", "<scope>compile</scope>"), encoding="utf-8")
+        with patch.object(contract, "ROOT", root), self.assertRaisesRegex(ValueError, "provided and optional"):
+            contract.validate()
+
+    def test_product_bom_tracks_the_compiled_native_generation(self):
+        root = self.fixture()
+        pom = root / "driverkit-redis-jedis3-bom/pom.xml"
+        current = pom.read_text(encoding="utf-8")
+        pom.write_text(current.replace("<version>3.10.0</version>", "<version>3.9.0</version>"), encoding="utf-8")
+        with patch.object(contract, "ROOT", root), self.assertRaisesRegex(ValueError, "product BOM"):
+            contract.validate()
+
 
 if __name__ == "__main__":
     unittest.main()

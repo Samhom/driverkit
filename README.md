@@ -23,6 +23,7 @@
 | --- | --- |
 | `driverkit-core` | Java 8 公共运行时、SPI、配置、限流、独占消费者控制器 |
 | `driverkit-config-apollo` | 已授权 Apollo `Config` 对象上的单文档订阅 |
+| `driverkit-settings` | 不依赖厂商驱动的不可变产品配置，供不同代际分别使用 |
 | `driverkit-observe-micrometer` | 使用应用提供的 MeterRegistry，限制指标标签基数 |
 | `driverkit-observe-opentelemetry` | 使用应用提供的 OpenTelemetry，省略查询及凭据 |
 | `driverkit-reactor` | 每次订阅创建一次受管调用的 Mono 桥接 |
@@ -35,6 +36,8 @@
 | `driverkit-bom` | SDK 模块及安全修复后的依赖组合 |
 
 `driverkit-rocketmq-grpc` 位于独立的 `experimental-grpc` 配置中，默认不构建、不纳入正式 BOM。已替换官方非内嵌依赖并修补 TLS，有独立安全 CI；真实 Proxy 消费恢复仍需验证和人工安全评审；详见 [SECURITY.md](SECURITY.md)。
+
+`-Plegacy-drivers` 提供 Jedis 3、HLRC 7、Couchbase SDK 2、Remoting 4 的具体迁移适配和独立 `driverkit-legacy-bom`。原生旧驱动由应用显式提供，不进入默认 BOM；已 EOL 或内嵌组件仍有风险的组合需人工安全评审。使用方式和代际限制见 [迁移说明](docs/MIGRATION.md)。
 
 Remoting 的 `tls=true` 使用 `driverkit-rocketmq-transport`：固定上游 5.5.1 输入并校验 SHA-256，仅修补 TLS 连接初始化，使用 JDK 信任库、TLS 1.2/1.3 和 HTTPS 主机名校验。NameServer 与路由返回的 Broker 地址均按各自原始主机名验证；IP 地址须出现在证书 IP SAN 中。不能同时引入原版 `rocketmq-remoting`，不能使用上游测试模式。私有 CA 通过部署的 JDK truststore 配置。
 

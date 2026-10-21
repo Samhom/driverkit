@@ -10,6 +10,37 @@
 
 核心是 Java 8 库，FactoryAdapter 可在旧应用中使用。当前厂商专用适配器使用 Java 17；旧应用先使用 core 桥接，避免被迫同时升级 JDK 与全部驱动。
 
+## 具体代际模块
+
+`-Plegacy-drivers` 构建以下独立迁移模块。它们保留原生请求、结果及异常模型，共用 core 的稳定句柄、版本配置、租约、期限、指标和清理机制。模块使用 Java 17，Java 8 应用继续先使用 core 的 FactoryAdapter。
+
+| 模块 | 编译验证的驱动 | 受管原生对象 | 边界 |
+| --- | --- | --- | --- |
+| driverkit-redis-jedis3 | Jedis 3.10.0 | JedisPool | 在租约内借还 Jedis；TLS 显式启用 HTTPS 端点识别 |
+| driverkit-elasticsearch7 | HLRC 7.17.29 | RestHighLevelClient | 保留 HLRC API，固定单一可信端点，禁重定向；就绪响应缓存 16 MiB |
+| driverkit-couchbase2 | Java SDK 2.7.23 | Couchbase2Client | 同时拥有 Bucket/Cluster/Environment；仅默认 scope/collection；TLS 暂拒绝 |
+| driverkit-rocketmq4 | Remoting 4.9.8 + ACL 4.9.8 | DefaultMQProducer / DefaultMQPushConsumer | 原生确认/位点；消费者接入 ExclusiveConsumer；TLS 暂拒绝 |
+
+旧原生依赖均为 `provided + optional`，不通过迁移模块传递给应用，也不进入默认 BOM。应用须显式提供表中的驱动，并导入该产品的 `driverkit-redis-jedis3-bom`、`driverkit-elasticsearch7-bom`、`driverkit-couchbase2-bom` 或 `driverkit-rocketmq4-bom`。这些 BOM 共用 `driverkit-legacy-bom` 的安全补丁，分别管理各自的原生代际，避免只迁移 Redis 时改动另一个产品的驱动版本。同一产品的两个代际不能放入同一应用类路径。
+
+legacy BOM 固定 Fastjson `1.2.83_noneautotype`、Log4j `2.26.1`、BeanUtils `1.11.0`、Commons Lang `3.20.0`、SnakeYAML `2.4`；ES 7 / Remoting 4 排除旧 LZ4 并使用维护中的 `at.yawk.lz4`。Remoting 4 适配器仅使用显式 RPC 凭据，不支持其旧 YAML 凭据文件加载 API。原生签名测试验证补丁链接。四个模块也分别确认新代际类不存在，防止运行时选择错误版本。
+
+`driverkit-settings` 只包含不可变配置和 core 依赖，不绑定任何厂商驱动。现有配置类包名及 API 保持一致，主线与旧代际可分别使用它。业务继续按原生代际 API 操作，不把 ES HLRC 请求强转成新 Java API Client 请求，不模拟 SDK 2 的 collections。
+
+例如 Jedis 3 在受管调用中借还连接：
+
+```java
+ManagedClient<JedisPool, RedisSettings> client = runtime.register(
+    new ConfigSnapshot<>(resource, 1, settings), new Jedis3Adapter(), ClientPolicy.defaults());
+String value = client.execute(Operation.read("get", Duration.ofSeconds(2)), (pool, context) -> {
+    try (Jedis jedis = pool.getResource()) { return jedis.get(key); }
+});
+```
+
+Pipeline、事务和长会话使用 `client.session()` 固定代际，并在结束后归还连接。原生 API 扩展点的请求规模、响应限制及业务幂等仍由调用方遵守。
+
+这些模块提供迁移能力，不代表旧厂商版本重新获得上游维护。ES 7.17 已于 2026-01-15 结束支持，Couchbase SDK 2 也已 EOL；旧组件安全风险和目标集群组合**需人工安全评审**。详见 [安全边界](../SECURITY.md#旧代际迁移模块)。
+
 ## 主要迁移点
 
 | 产品 | 迁移关注点 |

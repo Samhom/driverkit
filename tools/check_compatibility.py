@@ -55,6 +55,27 @@ def validate():
     required = {"driverkit-core", "driverkit-redis-jedis", "driverkit-elasticsearch", "driverkit-couchbase", "driverkit-rocketmq", "driverkit-rocketmq-grpc", "driverkit-rocketmq-transport"}
     if not required <= represented:
         raise ValueError("Missing a managed driver or transport in the matrix")
+    legacy_profile = pom.find("m:profiles/m:profile[m:id='legacy-drivers']", NS)
+    if legacy_profile is not None:
+        legacy_bom = ET.parse(ROOT / "driverkit-legacy-bom/pom.xml").getroot()
+        def managed_versions(node):
+            return {(d.findtext("m:groupId", namespaces=NS), d.findtext("m:artifactId", namespaces=NS)): d.findtext("m:version", namespaces=NS) for d in node.findall("m:dependencyManagement/m:dependencies/m:dependency", NS)}
+        build_versions, published_versions = managed_versions(legacy_profile), managed_versions(legacy_bom)
+        if any(published_versions.get(key) != value for key, value in build_versions.items()):
+            raise ValueError("Legacy build and published BOM security versions drift")
+        for module in legacy_profile.findall("m:modules/m:module", NS):
+            if module.text == "driverkit-legacy-bom":
+                continue
+            legacy_pom = ET.parse(ROOT / module.text / "pom.xml").getroot()
+            for dependency in legacy_pom.findall("m:dependencies/m:dependency", NS):
+                group = dependency.findtext("m:groupId", namespaces=NS)
+                if group in {"redis.clients", "org.elasticsearch.client", "com.couchbase.client", "org.apache.rocketmq"}:
+                    if dependency.findtext("m:scope", namespaces=NS) != "provided" or dependency.findtext("m:optional", namespaces=NS) != "true":
+                        raise ValueError("Legacy native drivers must remain provided and optional")
+                    product_bom = ET.parse(ROOT / (module.text + "-bom") / "pom.xml").getroot()
+                    key = (group, dependency.findtext("m:artifactId", namespaces=NS))
+                    if managed_versions(product_bom).get(key) != dependency.findtext("m:version", namespaces=NS):
+                        raise ValueError("Legacy product BOM and compiled driver versions drift")
     return "\n".join(lines + ["", END])
 
 

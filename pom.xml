@@ -36,6 +36,7 @@
   </properties>
   <modules>
     <module>driverkit-core</module>
+    <module>driverkit-settings</module>
     <module>driverkit-config-apollo</module>
     <module>driverkit-observe-micrometer</module>
     <module>driverkit-observe-opentelemetry</module>
@@ -162,6 +163,57 @@
     </plugins>
   </build>
   <profiles>
+    <profile>
+  <id>legacy-drivers</id>
+  <modules>
+    <module>driverkit-redis-jedis3</module>
+    <module>driverkit-elasticsearch7</module>
+    <module>driverkit-couchbase2</module>
+    <module>driverkit-rocketmq4</module>
+    <module>driverkit-legacy-bom</module>
+        <module>driverkit-redis-jedis3-bom</module>
+        <module>driverkit-elasticsearch7-bom</module>
+        <module>driverkit-couchbase2-bom</module>
+        <module>driverkit-rocketmq4-bom</module>
+  </modules>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.alibaba</groupId>
+        <artifactId>fastjson</artifactId>
+        <version>1.2.83_noneautotype</version>
+      </dependency>
+      <dependency>
+        <groupId>commons-beanutils</groupId>
+        <artifactId>commons-beanutils</artifactId>
+        <version>1.11.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.commons</groupId>
+        <artifactId>commons-lang3</artifactId>
+        <version>3.20.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>log4j-api</artifactId>
+        <version>2.26.1</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>log4j-core</artifactId>
+        <version>2.26.1</version>
+      </dependency>
+      <dependency>
+        <groupId>org.yaml</groupId>
+        <artifactId>snakeyaml</artifactId>
+        <version>2.4</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+</profile>
+
+
+
     <profile><id>real-clusters</id><modules><module>driverkit-integration-tests</module></modules></profile>
     <profile>
       <id>experimental-grpc</id>

@@ -8,6 +8,25 @@ permissions:
   contents: read
 
 jobs:
+  legacy-adapters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile and verify isolated migration adapters
+        run: mvn -B -ntp -s .mvn/settings.xml -Dmaven.repo.local="$GITHUB_WORKSPACE/.m2-cache" -Plegacy-drivers -pl driverkit-redis-jedis3,driverkit-elasticsearch7,driverkit-couchbase2,driverkit-rocketmq4 -am verify com.spotify.fmt:fmt-maven-plugin:2.25:check
+      - name: Verify standalone mixed-generation BOM consumers
+        run: |
+          mvn -B -ntp -s .mvn/settings.xml -Dmaven.repo.local="$GITHUB_WORKSPACE/.m2-cache" -Plegacy-drivers -DskipTests install
+          mvn -B -ntp -s .mvn/settings.xml -Dmaven.repo.local="$GITHUB_WORKSPACE/.m2-cache" -f .ci/bom-consumers/redis/pom.xml org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree -DoutputType=json -DoutputFile=target/dependencies.json
+          mvn -B -ntp -s .mvn/settings.xml -Dmaven.repo.local="$GITHUB_WORKSPACE/.m2-cache" -f .ci/bom-consumers/search/pom.xml org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree -DoutputType=json -DoutputFile=target/dependencies.json
+          python3 tools/check_bom_consumers.py
   grpc-security:
     runs-on: ubuntu-latest
     timeout-minutes: 20

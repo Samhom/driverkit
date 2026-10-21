@@ -59,9 +59,13 @@
       },
       "server": "Redis 8.2.3",
       "jdk": 17,
-      "status": "theoretical",
+      "status": "verified",
       "scope": "单节点认证与恢复",
-      "reason": "已有真实服务 CI 套件；本行须在对应提交实际通过后升级。"
+      "reason": "真实单节点：认证拒绝、网络暂停恢复、重启恢复及凭据轮换通过；不包含多节点/TLS/消费位点认证。",
+      "evidence": {
+        "url": "https://github.com/Samhom/driverkit/actions/runs/39605732975",
+        "command": "python3 tools/real_clusters.py redis"
+      }
     },
     {
       "module": "driverkit-redis-jedis",
@@ -98,9 +102,13 @@
       },
       "server": "Elasticsearch 9.5.5",
       "jdk": 17,
-      "status": "theoretical",
+      "status": "verified",
       "scope": "单节点认证与恢复",
-      "reason": "已有真实服务 CI 套件；本行须在对应提交实际通过后升级。"
+      "reason": "真实单节点：认证拒绝、网络暂停恢复、重启恢复及凭据轮换通过；不包含多节点/TLS/消费位点认证。",
+      "evidence": {
+        "url": "https://github.com/Samhom/driverkit/actions/runs/39605732975",
+        "command": "python3 tools/real_clusters.py elasticsearch"
+      }
     },
     {
       "module": "driverkit-elasticsearch",
@@ -137,9 +145,13 @@
       },
       "server": "Couchbase Community 7.6.2",
       "jdk": 17,
-      "status": "theoretical",
+      "status": "verified",
       "scope": "单节点认证与恢复",
-      "reason": "已有真实服务 CI 套件；本行须在对应提交实际通过后升级。"
+      "reason": "真实单节点：认证拒绝、网络暂停恢复、重启恢复及凭据轮换通过；不包含多节点/TLS/消费位点认证。",
+      "evidence": {
+        "url": "https://github.com/Samhom/driverkit/actions/runs/39605732975",
+        "command": "python3 tools/real_clusters.py couchbase"
+      }
     },
     {
       "module": "driverkit-couchbase",
@@ -176,9 +188,13 @@
       },
       "server": "RocketMQ 5.5.0",
       "jdk": 17,
-      "status": "theoretical",
+      "status": "verified",
       "scope": "单节点认证与恢复",
-      "reason": "已有真实服务 CI 套件；本行须在对应提交实际通过后升级。"
+      "reason": "真实单节点：认证拒绝、网络暂停恢复、重启恢复及凭据轮换通过；不包含多节点/TLS/消费位点认证。",
+      "evidence": {
+        "url": "https://github.com/Samhom/driverkit/actions/runs/39605732975",
+        "command": "python3 tools/real_clusters.py rocketmq"
+      }
     },
     {
       "module": "driverkit-rocketmq",
@@ -317,6 +333,54 @@
       "status": "theoretical",
       "scope": "实验模块消费",
       "reason": "尚无真实 Proxy 消费恢复和位点证据，需人工安全评审。"
+    },
+    {
+      "module": "driverkit-redis-jedis3",
+      "driver": {
+        "artifact": "jedis",
+        "version": "3.10.0"
+      },
+      "server": "Redis 6.x/7.x",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "隔离迁移适配",
+      "reason": "具体生命周期适配已实现；原生依赖由应用提供，真实旧集群未验证，需人工安全评审。"
+    },
+    {
+      "module": "driverkit-elasticsearch7",
+      "driver": {
+        "artifact": "elasticsearch-rest-high-level-client",
+        "version": "7.17.29"
+      },
+      "server": "Elasticsearch 7.17.x",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "隔离迁移适配",
+      "reason": "具体生命周期适配已实现；原生依赖由应用提供，真实旧集群未验证，需人工安全评审。"
+    },
+    {
+      "module": "driverkit-couchbase2",
+      "driver": {
+        "artifact": "java-client",
+        "version": "2.7.23"
+      },
+      "server": "Couchbase Server 6.x/7.x",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "隔离迁移适配",
+      "reason": "具体生命周期适配已实现；原生依赖由应用提供，真实旧集群未验证，需人工安全评审。"
+    },
+    {
+      "module": "driverkit-rocketmq4",
+      "driver": {
+        "artifact": "rocketmq-client",
+        "version": "4.9.8"
+      },
+      "server": "RocketMQ 4.9.x",
+      "jdk": 17,
+      "status": "theoretical",
+      "scope": "隔离迁移适配",
+      "reason": "具体生命周期适配已实现；原生依赖由应用提供，真实旧集群未验证，需人工安全评审。"
     }
   ]
 }
