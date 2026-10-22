@@ -19,6 +19,11 @@ public interface DriverAdapter<C, S> {
 
   void warmup(C client, Duration timeout) throws Exception;
 
+  /** Settings-aware readiness for the actual bucket/database owned by this generation. */
+  default void warmup(C client, S settings, Duration remaining) throws Exception {
+    warmup(client, remaining);
+  }
+
   void close(C client) throws Exception;
 
   /** Native implementations should apply this budget where their driver supports it. */

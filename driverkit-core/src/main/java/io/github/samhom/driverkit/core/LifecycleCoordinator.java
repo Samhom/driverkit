@@ -139,7 +139,7 @@ final class LifecycleCoordinator {
             adapter.validate(settings);
             return adapter.create(settings, remainingInitialization());
           };
-      this.warmup = adapter::warmup;
+      this.warmup = (client, remaining) -> adapter.warmup(client, settings, remaining);
       this.closer = adapter::close;
       this.initializationDeadline = System.nanoTime() + timeout.toNanos();
       this.shutdownTimeout = shutdownTimeout;

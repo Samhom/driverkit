@@ -81,6 +81,16 @@ public final class CouchbaseAdapter implements DriverAdapter<Cluster, CouchbaseS
   }
 
   @Override
+  public void warmup(Cluster client, CouchbaseSettings settings, Duration remaining) {
+    long deadline = System.nanoTime() + remaining.toNanos();
+    client.waitUntilReady(remaining);
+    long nanos = deadline - System.nanoTime();
+    if (nanos <= 0)
+      throw new ClientException(ClientException.Kind.TIMEOUT, "Bucket readiness deadline exceeded");
+    client.bucket(settings.bucket()).waitUntilReady(Duration.ofNanos(nanos));
+  }
+
+  @Override
   public void close(Cluster client) {
     client.disconnect();
   }

@@ -8,6 +8,47 @@ import org.junit.jupiter.api.Test;
 
 class CapabilityContractTest {
   @Test
+  void readinessUsesTheSameGenerationSettingsBeforePublication() {
+    java.util.concurrent.atomic.AtomicBoolean ready =
+        new java.util.concurrent.atomic.AtomicBoolean();
+    DriverAdapter<String, String> adapter =
+        new DriverAdapter<>() {
+          public String id() {
+            return "readiness";
+          }
+
+          public void validate(String settings) {}
+
+          public String create(String settings) {
+            return settings;
+          }
+
+          public void warmup(String client, Duration remaining) {
+            fail("Settings-aware readiness must be used");
+          }
+
+          public void warmup(String client, String settings, Duration remaining) {
+            assertEquals("target-bucket", settings);
+            assertEquals(settings, client);
+            assertTrue(remaining.compareTo(Duration.ZERO) > 0);
+            assertTrue(remaining.compareTo(Duration.ofSeconds(2)) <= 0);
+            ready.set(true);
+          }
+
+          public void close(String client) {}
+        };
+    try (ClientRuntime runtime = new ClientRuntime()) {
+      ManagedClient<String, String> handle =
+          runtime.register(
+              new ConfigSnapshot<>(new ResourceId("contract", "test", "ready"), 1, "target-bucket"),
+              adapter,
+              new ClientPolicy(1, Duration.ofSeconds(2), Duration.ofSeconds(1)));
+      assertTrue(ready.get());
+      assertEquals(1, handle.status().revision());
+    }
+  }
+
+  @Test
   void unsupportedContractsFailExplicitlyAndDeclarationsAreImmutable() {
     AdapterCapabilities c = AdapterCapabilities.nativeApi(true);
     c.requireManaged(AdapterCapabilities.Feature.ASYNC);

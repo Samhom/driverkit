@@ -114,3 +114,5 @@ Reactor 在请求作用域中用 `.contextWrite(ReactorCalls.context(propagation
 Redis 使用原生 ACL 异常和标准协议错误前缀，连接原因区分连接失败与读超时；ES 401/403/429 分别分类，5xx 对写入保守视为结果不确定；Couchbase 保留 unambiguous timeout 与 ambiguous/durability-ambiguous timeout 的差别。Remoting 的 NO_PERMISSION 无法可靠区分认证与权限，统一归权限拒绝；5 代 USER_NOT_EXIST 可归认证失败，刷盘/副本超时归写入结果不确定。gRPC 支持原生类型及 Status，实验模块隔离保持不变。旧代模块在各自依赖图中提供对应分类。
 
 SDK 核心不自动重放。Redis 单节点不加应用重试；ES 同时关闭 HTTP 和 Java Client 重试；Remoting 发送重试为 0，gRPC maxAttempts=1。Couchbase 受管 KV 门面通过公开 RetryStrategy 返回 noRetry，避免普通暂时故障重放；原生 mandatory/alwaysRetry 路由恢复仍可能发生，受剩余预算限制。原生会话和旧版 Couchbase 保留厂商默认语义，应用应检查原生配置，避免再叠加无界 retry/retryWhen。参考 [Couchbase 官方错误与重试说明](https://docs.couchbase.com/java-sdk/current/howtos/error-handling.html)。
+
+Couchbase 代际发布前还须确认配置中的目标 Bucket 已就绪。settings-aware `DriverAdapter.warmup(client, settings, remaining)` 默认兼容旧 warmup，实现可在同一初始化截止内验证实际资源；Couchbase 先等待 Cluster，再扣除已消耗时间等待 Bucket，避免 noRetry 下首请求遇到 BUCKET_OPEN_IN_PROGRESS。该行为由真实服务门面场景覆盖。
