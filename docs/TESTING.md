@@ -37,3 +37,5 @@ RESP 测试通过真实 Jedis 连接池和 socket 执行认证、KV 与 Pipeline
 性能应与相同版本原生客户端比较，分别测量关闭观测、仅指标和启用采样追踪时的吞吐、P99、分配量、线程、连接及内存。当前仓库不宣称已经完成这些实际负载测试。
 
 Java 8 核心运行检查位于 `.ci/Java8Smoke.java`，CI 在构建后切换到 JDK 8，独立编译并运行它。
+
+Couchbase 真实服务场景额外执行 `ManagedDocuments` 的异步 upsert/get/CAS replace，在初始化、节点重启后及凭据轮换后验证公开 noRetry 策略下的门面行为；测试级恢复轮询仍有固定截止时间。

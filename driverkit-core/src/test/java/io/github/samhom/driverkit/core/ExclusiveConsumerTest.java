@@ -165,7 +165,7 @@ class ExclusiveConsumerTest {
         new RateLimitPolicy(Map.of(RESOURCE, new RateLimitPolicy.Limit(1, 1)));
     limiter.check(RESOURCE, Operation.read("get", Duration.ofSeconds(1)));
     assertEquals(
-        ClientException.Kind.OVERLOADED,
+        ClientException.Kind.RATE_LIMITED,
         assertThrows(
                 ClientException.class,
                 () -> limiter.check(RESOURCE, Operation.read("get", Duration.ofSeconds(1))))

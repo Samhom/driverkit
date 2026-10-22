@@ -104,3 +104,13 @@ Rest5 9.5.5 的 `RequestContext` 创建 HttpClientContext 时遗失 RequestOptio
 Reactor 在请求作用域中用 `.contextWrite(ReactorCalls.context(propagation))` 捕获快照，订阅时恢复再捕获到受管调用；`ReactorCalls.mono` 将订阅者 Reactor Context 继续传给原生 Mono。无需安装全局 Hooks。额外 `publishOn` 后的业务执行器仍应使用对应框架的上下文桥接。
 
 测试覆盖成功、错误、超时、取消、线程复用、传播器打开失败回滚、原生迟到完成和 Reactor 调度切换。
+
+## 异常及重试边界
+
+`ClientException.Kind` 进一步区分 `AUTHENTICATION`、`AUTHORIZATION`、`RATE_LIMITED`、本地容量 `OVERLOADED`、`CONNECTION_FAILURE`、`TLS_FAILURE`、`SERVER_REJECTED` 和 `WRITE_OUTCOME_UNKNOWN`。限流策略及 ES 429 改为 `RATE_LIMITED`；调用方应更新原有 OVERLOADED 分支。分类器最多检查 32 层原因并识别循环，保留原生 cause，SDK 顶层消息和观测事件不复制原生错误文本。应用如输出整个堆栈，仍须自行处理 cause 中的查询和标识符。
+
+`failure.retryAdvice(operation)` 只给建议，不发起重试：明确只读且遇到暂时错误返回 `RETRY_READ_WITH_BACKOFF`，认证/权限/证书/请求错误不重试，结果不确定返回 `RECONCILE_WRITE`。所有写操作均不会得到自动重放建议。应用必须在同一个总截止时间内限制尝试次数、指数退避和抖动；`Operation.read` 必须真正无副作用，SDK 不解析 SQL/查询来证明它只读。写入结果不确定时先用业务幂等键或查询核对，不能把异常解释为回滚。
+
+Redis 使用原生 ACL 异常和标准协议错误前缀，连接原因区分连接失败与读超时；ES 401/403/429 分别分类，5xx 对写入保守视为结果不确定；Couchbase 保留 unambiguous timeout 与 ambiguous/durability-ambiguous timeout 的差别。Remoting 的 NO_PERMISSION 无法可靠区分认证与权限，统一归权限拒绝；5 代 USER_NOT_EXIST 可归认证失败，刷盘/副本超时归写入结果不确定。gRPC 支持原生类型及 Status，实验模块隔离保持不变。旧代模块在各自依赖图中提供对应分类。
+
+SDK 核心不自动重放。Redis 单节点不加应用重试；ES 同时关闭 HTTP 和 Java Client 重试；Remoting 发送重试为 0，gRPC maxAttempts=1。Couchbase 受管 KV 门面通过公开 RetryStrategy 返回 noRetry，避免普通暂时故障重放；原生 mandatory/alwaysRetry 路由恢复仍可能发生，受剩余预算限制。原生会话和旧版 Couchbase 保留厂商默认语义，应用应检查原生配置，避免再叠加无界 retry/retryWhen。参考 [Couchbase 官方错误与重试说明](https://docs.couchbase.com/java-sdk/current/howtos/error-handling.html)。

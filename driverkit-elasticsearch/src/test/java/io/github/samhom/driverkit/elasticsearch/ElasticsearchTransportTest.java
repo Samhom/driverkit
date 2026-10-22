@@ -53,7 +53,7 @@ class ElasticsearchTransportTest {
                   ClientPolicy.defaults()),
               settings);
       assertEquals(
-          ClientException.Kind.OVERLOADED,
+          ClientException.Kind.RATE_LIMITED,
           assertThrows(ClientException.class, () -> search.get("limited", "a")).kind());
       assertEquals(1, server.limited.get());
     }
@@ -165,18 +165,58 @@ class ElasticsearchTransportTest {
               new ElasticsearchAdapter(),
               ClientPolicy.defaults());
       // Facade ceiling is shorter than the generation's native defaults.
-      ManagedSearch search = new ManagedSearch(handle, base);
+      ManagedSearch search =
+          new ManagedSearch(
+              handle,
+              new ElasticsearchSettings(
+                  base.endpoint(),
+                  base.credentials(),
+                  base.connectTimeout(),
+                  Duration.ofMillis(200),
+                  2,
+                  10,
+                  1024));
       try {
         CompletableFuture<?> pending = search.getAsync("slow", "a");
         assertTrue(server.slowEntered.await(2, TimeUnit.SECONDS));
         assertThrows(ExecutionException.class, () -> pending.get(3, TimeUnit.SECONDS));
-        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (handle.status().inFlight() != 0 && System.nanoTime() < until) Thread.yield();
         assertEquals(0, handle.status().inFlight());
       } finally {
         server.slowRelease.countDown();
       }
       assertTrue(search.get("catalog", "a").found());
+    }
+  }
+
+  @Test
+  void nativeHttpErrorsDistinguishCredentialsPermissionsAndUncertainWrites() throws Exception {
+    try (SearchServer server = new SearchServer();
+        ClientRuntime runtime = new ClientRuntime()) {
+      ElasticsearchSettings settings = server.settings();
+      ManagedSearch search =
+          new ManagedSearch(
+              runtime.register(
+                  new ConfigSnapshot<>(RESOURCE, 1, settings),
+                  new ElasticsearchAdapter(),
+                  ClientPolicy.defaults()),
+              settings);
+      assertEquals(
+          ClientException.Kind.AUTHENTICATION,
+          assertThrows(ClientException.class, () -> search.get("unauthenticated", "a")).kind());
+      assertEquals(
+          ClientException.Kind.AUTHORIZATION,
+          assertThrows(ClientException.class, () -> search.get("denied", "a")).kind());
+      assertEquals(
+          ClientException.Kind.SERVER_REJECTED,
+          assertThrows(ClientException.class, () -> search.get("unavailable", "a")).kind());
+      ClientException write =
+          assertThrows(ClientException.class, () -> search.index("unavailable", "a", "{}"));
+      assertEquals(ClientException.Kind.WRITE_OUTCOME_UNKNOWN, write.kind());
+      assertEquals(
+          ClientException.RetryAdvice.RECONCILE_WRITE,
+          write.retryAdvice(Operation.write("index", Duration.ofSeconds(1))));
     }
   }
 
@@ -244,7 +284,16 @@ class ElasticsearchTransportTest {
           }
         }
         int status = 200;
-        if (path.startsWith("/limited/")) {
+        if (path.startsWith("/unauthenticated/")
+            || path.startsWith("/denied/")
+            || path.startsWith("/unavailable/")) {
+          status =
+              path.startsWith("/unauthenticated/") ? 401 : path.startsWith("/denied/") ? 403 : 503;
+          body =
+              "{\"error\":{\"type\":\"fixture_exception\",\"reason\":\"fixture\"},\"status\":"
+                  + status
+                  + "}";
+        } else if (path.startsWith("/limited/")) {
           limited.incrementAndGet();
           status = 429;
           body =

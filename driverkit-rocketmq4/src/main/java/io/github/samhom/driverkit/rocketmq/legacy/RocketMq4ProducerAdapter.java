@@ -63,8 +63,6 @@ public final class RocketMq4ProducerAdapter
 
   @Override
   public ClientException.Kind classify(Throwable error, Operation operation) {
-    return operation.replaySafe()
-        ? ClientException.Kind.UNAVAILABLE
-        : ClientException.Kind.WRITE_OUTCOME_UNKNOWN;
+    return RemotingFailures.classify(error, operation);
   }
 }

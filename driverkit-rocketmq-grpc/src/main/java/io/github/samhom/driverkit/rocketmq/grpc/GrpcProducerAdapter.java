@@ -18,9 +18,47 @@ public final class GrpcProducerAdapter implements DriverAdapter<Producer, GrpcSe
 
   @Override
   public ClientException.Kind classify(Throwable error, Operation operation) {
-    return operation.replaySafe()
-        ? ClientException.Kind.UNAVAILABLE
-        : ClientException.Kind.WRITE_OUTCOME_UNKNOWN;
+    error = FailureClassifier.unwrap(error);
+    if (FailureClassifier.transport(error, operation) == ClientException.Kind.TLS_FAILURE)
+      return ClientException.Kind.TLS_FAILURE;
+    if (error instanceof org.apache.rocketmq.client.java.exception.UnauthorizedException)
+      return ClientException.Kind.AUTHENTICATION;
+    if (error instanceof org.apache.rocketmq.client.java.exception.ForbiddenException)
+      return ClientException.Kind.AUTHORIZATION;
+    if (error instanceof org.apache.rocketmq.client.java.exception.TooManyRequestsException)
+      return ClientException.Kind.RATE_LIMITED;
+    if (error instanceof org.apache.rocketmq.client.java.exception.NotFoundException)
+      return ClientException.Kind.NOT_FOUND;
+    if (error instanceof org.apache.rocketmq.client.java.exception.BadRequestException
+        || error instanceof org.apache.rocketmq.client.java.exception.PayloadTooLargeException
+        || error instanceof org.apache.rocketmq.client.java.exception.PayloadEmptyException
+        || error instanceof org.apache.rocketmq.client.java.exception.UnsupportedException)
+      return ClientException.Kind.INVALID_REQUEST;
+    if (error instanceof io.grpc.StatusRuntimeException
+        || error instanceof io.grpc.StatusException) {
+      switch (io.grpc.Status.fromThrowable(error).getCode()) {
+        case UNAUTHENTICATED:
+          return ClientException.Kind.AUTHENTICATION;
+        case PERMISSION_DENIED:
+          return ClientException.Kind.AUTHORIZATION;
+        case RESOURCE_EXHAUSTED:
+          return ClientException.Kind.RATE_LIMITED;
+        case INVALID_ARGUMENT:
+        case UNIMPLEMENTED:
+          return ClientException.Kind.INVALID_REQUEST;
+        case NOT_FOUND:
+          return ClientException.Kind.NOT_FOUND;
+        case DEADLINE_EXCEEDED:
+          return FailureClassifier.uncertain(operation, ClientException.Kind.TIMEOUT);
+        default:
+          return FailureClassifier.uncertain(operation, ClientException.Kind.UNAVAILABLE);
+      }
+    }
+    ClientException.Kind common = FailureClassifier.transport(error, operation);
+    if (common != ClientException.Kind.DRIVER_FAILURE) return common;
+    if (error instanceof org.apache.rocketmq.client.apis.ClientException)
+      return FailureClassifier.uncertain(operation, ClientException.Kind.SERVER_REJECTED);
+    return ClientException.Kind.DRIVER_FAILURE;
   }
 
   @Override

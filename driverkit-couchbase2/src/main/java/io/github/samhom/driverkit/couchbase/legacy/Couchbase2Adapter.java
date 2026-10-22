@@ -49,4 +49,19 @@ public final class Couchbase2Adapter implements DriverAdapter<Couchbase2Client, 
   public void close(Couchbase2Client client, Duration remaining) {
     client.close(Math.max(1, remaining.toMillis()));
   }
+
+  @Override
+  public ClientException.Kind classify(Throwable error, Operation operation) {
+    error = FailureClassifier.unwrap(error);
+    if (error instanceof com.couchbase.client.java.error.AuthenticationException
+        || error instanceof com.couchbase.client.java.error.AuthenticatorException)
+      return ClientException.Kind.AUTHENTICATION;
+    if (error instanceof com.couchbase.client.java.error.DocumentDoesNotExistException)
+      return ClientException.Kind.NOT_FOUND;
+    if (error instanceof com.couchbase.client.java.error.DocumentAlreadyExistsException)
+      return ClientException.Kind.CONFLICT;
+    if (error instanceof com.couchbase.client.java.error.TemporaryFailureException)
+      return ClientException.Kind.SERVER_REJECTED;
+    return FailureClassifier.transport(error, operation);
+  }
 }

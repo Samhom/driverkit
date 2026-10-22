@@ -51,6 +51,6 @@ public final class RateLimitPolicy implements AdmissionPolicy {
   public void check(ResourceId resource, Operation operation) {
     Bucket bucket = buckets.get(resource);
     if (bucket != null && !bucket.acquire())
-      throw new ClientException(ClientException.Kind.OVERLOADED, "Resource rate limit exceeded");
+      throw new ClientException(ClientException.Kind.RATE_LIMITED, "Resource rate limit exceeded");
   }
 }

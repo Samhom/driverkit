@@ -3,7 +3,6 @@ package io.github.samhom.driverkit.core;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -326,9 +325,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   }
 
   private static Throwable unwrap(Throwable error) {
-    while ((error instanceof CompletionException || error instanceof ExecutionException)
-        && error.getCause() != null) error = error.getCause();
-    return error;
+    return FailureClassifier.unwrap(error);
   }
 
   private Throwable translate(Throwable error, Operation operation) {

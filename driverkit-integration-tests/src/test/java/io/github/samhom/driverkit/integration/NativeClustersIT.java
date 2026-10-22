@@ -147,7 +147,17 @@ class NativeClustersIT {
                 "PUT",
                 "password=" + password + "&roles=bucket_full_access%5Bdriverkit-it%5D",
                 "application/x-www-form-urlencoded",
-                "Administrator"));
+                "Administrator"),
+        (managed, current) -> {
+          ManagedDocuments documents = new ManagedDocuments(managed, current);
+          documents.upsertAsync("managed-probe", "{\"value\":\"ok\"}").get(3, TimeUnit.SECONDS);
+          ManagedDocuments.Document document =
+              documents.getAsync("managed-probe").get(3, TimeUnit.SECONDS);
+          assertTrue(document.cas() != 0);
+          documents
+              .replaceAsync("managed-probe", "{\"value\":\"updated\"}", document.cas())
+              .get(3, TimeUnit.SECONDS);
+        });
   }
 
   @Test
@@ -229,6 +239,21 @@ class NativeClustersIT {
       Probe<C> probe,
       Rotation rotate)
       throws Exception {
+    exercise(product, adapter, settings, probe, rotate, (managed, current) -> {});
+  }
+
+  interface ManagedProbe<C, S> {
+    void run(ManagedClient<C, S> client, S settings) throws Exception;
+  }
+
+  static <C, S> void exercise(
+      String product,
+      DriverAdapter<C, S> adapter,
+      Function<String, S> settings,
+      Probe<C> probe,
+      Rotation rotate,
+      ManagedProbe<C, S> facade)
+      throws Exception {
     String initial = required("DRIVERKIT_IT_PASSWORD");
     // Readiness is checked with the actual SDK; a listening port is insufficient.
     await(() -> withNative(adapter, settings.apply(initial), probe), 90);
@@ -242,6 +267,7 @@ class NativeClustersIT {
       ManagedClient<C, S> managed =
           runtime.register(
               new ConfigSnapshot<>(RESOURCE, 1, settings.apply(initial)), adapter, policy);
+      facade.run(managed, settings.apply(initial));
       control(product, "pause");
       try {
         assertThrows(ClientException.class, () -> execute(managed, probe));
@@ -251,6 +277,7 @@ class NativeClustersIT {
       await(() -> execute(managed, probe), 45);
       control(product, "restart");
       await(() -> execute(managed, probe), 90);
+      await(() -> facade.run(managed, settings.apply(initial)), 45);
       String next = UUID.randomUUID().toString();
       rotate.run(next);
       await(
@@ -268,6 +295,7 @@ class NativeClustersIT {
           UpdateResult.APPLIED,
           managed.reload(new ConfigSnapshot<>(RESOURCE, 2, settings.apply(next))));
       await(() -> execute(managed, probe), 45);
+      await(() -> facade.run(managed, settings.apply(next)), 45);
       assertEquals(2, managed.status().revision());
       assertEquals(0, managed.cleanupFailures());
     }

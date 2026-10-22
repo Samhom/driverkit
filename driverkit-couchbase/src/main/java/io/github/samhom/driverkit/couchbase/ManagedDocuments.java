@@ -9,6 +9,10 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 public final class ManagedDocuments {
+  private static final com.couchbase.client.core.retry.RetryStrategy NO_REPLAY =
+      (request, reason) ->
+          CompletableFuture.completedFuture(com.couchbase.client.core.retry.RetryAction.noRetry());
+
   public record Document(String json, long cas) {}
 
   private final ManagedClient<Cluster, CouchbaseSettings> client;
@@ -41,7 +45,9 @@ public final class ManagedDocuments {
                 .scope(scope)
                 .collection(collection)
                 .async()
-                .get(key, GetOptions.getOptions().timeout(context.remaining()))
+                .get(
+                    key,
+                    GetOptions.getOptions().retryStrategy(NO_REPLAY).timeout(context.remaining()))
                 .thenApply(
                     result -> new Document(result.contentAsObject().toString(), result.cas())));
   }
@@ -61,7 +67,12 @@ public final class ManagedDocuments {
               .scope(scope)
               .collection(collection)
               .async()
-              .upsert(key, value, UpsertOptions.upsertOptions().timeout(context.remaining()))
+              .upsert(
+                  key,
+                  value,
+                  UpsertOptions.upsertOptions()
+                      .retryStrategy(NO_REPLAY)
+                      .timeout(context.remaining()))
               .thenApply(MutationResult::cas);
         });
   }
@@ -82,7 +93,12 @@ public final class ManagedDocuments {
               .collection(collection)
               .async()
               .replace(
-                  key, value, ReplaceOptions.replaceOptions().cas(cas).timeout(context.remaining()))
+                  key,
+                  value,
+                  ReplaceOptions.replaceOptions()
+                      .retryStrategy(NO_REPLAY)
+                      .cas(cas)
+                      .timeout(context.remaining()))
               .thenApply(MutationResult::cas);
         });
   }

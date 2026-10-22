@@ -83,10 +83,17 @@ public final class Elasticsearch7Adapter
 
   @Override
   public ClientException.Kind classify(Throwable error, Operation operation) {
-    if (error instanceof java.io.IOException)
-      return operation.replaySafe()
-          ? ClientException.Kind.UNAVAILABLE
-          : ClientException.Kind.WRITE_OUTCOME_UNKNOWN;
-    return ClientException.Kind.DRIVER_FAILURE;
+    error = FailureClassifier.unwrap(error);
+    if (error instanceof org.elasticsearch.ElasticsearchStatusException)
+      return FailureClassifier.http(
+          ((org.elasticsearch.ElasticsearchStatusException) error).status().getStatus(), operation);
+    if (error instanceof org.elasticsearch.client.ResponseException)
+      return FailureClassifier.http(
+          ((org.elasticsearch.client.ResponseException) error)
+              .getResponse()
+              .getStatusLine()
+              .getStatusCode(),
+          operation);
+    return FailureClassifier.transport(error, operation);
   }
 }

@@ -27,7 +27,7 @@ public interface DriverAdapter<C, S> {
   }
 
   default ClientException.Kind classify(Throwable error, Operation operation) {
-    return ClientException.Kind.DRIVER_FAILURE;
+    return FailureClassifier.transport(error, operation);
   }
 
   default AdapterCapabilities capabilities() {

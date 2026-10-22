@@ -26,6 +26,19 @@ public final class CouchbaseAdapter implements DriverAdapter<Cluster, CouchbaseS
 
   @Override
   public ClientException.Kind classify(Throwable error, Operation operation) {
+    error = FailureClassifier.unwrap(error);
+    if (error instanceof com.couchbase.client.core.error.DurabilityAmbiguousException
+        || error instanceof com.couchbase.client.core.error.RequestCanceledException)
+      return FailureClassifier.uncertain(operation, ClientException.Kind.UNAVAILABLE);
+    if (error instanceof com.couchbase.client.core.error.RateLimitedException
+        || error instanceof com.couchbase.client.core.error.QuotaLimitedException)
+      return ClientException.Kind.RATE_LIMITED;
+    if (error instanceof com.couchbase.client.core.error.TemporaryFailureException)
+      return ClientException.Kind.SERVER_REJECTED;
+    if (error instanceof com.couchbase.client.core.error.ServiceNotAvailableException)
+      return FailureClassifier.uncertain(operation, ClientException.Kind.UNAVAILABLE);
+    if (error instanceof com.couchbase.client.core.error.DocumentExistsException)
+      return ClientException.Kind.CONFLICT;
     if (error instanceof com.couchbase.client.core.error.AmbiguousTimeoutException)
       return operation.replaySafe()
           ? ClientException.Kind.TIMEOUT
@@ -38,7 +51,7 @@ public final class CouchbaseAdapter implements DriverAdapter<Cluster, CouchbaseS
       return ClientException.Kind.CONFLICT;
     if (error instanceof com.couchbase.client.core.error.AuthenticationFailureException)
       return ClientException.Kind.AUTHENTICATION;
-    return ClientException.Kind.DRIVER_FAILURE;
+    return FailureClassifier.transport(error, operation);
   }
 
   @Override

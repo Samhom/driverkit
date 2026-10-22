@@ -25,21 +25,18 @@ public final class ElasticsearchAdapter
 
   @Override
   public ClientException.Kind classify(Throwable error, Operation operation) {
-    if (error instanceof co.elastic.clients.elasticsearch._types.ElasticsearchException) {
-      int status =
-          ((co.elastic.clients.elasticsearch._types.ElasticsearchException) error).status();
-      if (status == 401) return ClientException.Kind.AUTHENTICATION;
-      if (status == 403) return ClientException.Kind.AUTHORIZATION;
-      if (status == 404) return ClientException.Kind.NOT_FOUND;
-      if (status == 409) return ClientException.Kind.CONFLICT;
-      if (status == 429) return ClientException.Kind.OVERLOADED;
-      if (status >= 400 && status < 500) return ClientException.Kind.INVALID_REQUEST;
-    }
-    if (error instanceof java.io.IOException)
-      return operation.replaySafe()
-          ? ClientException.Kind.UNAVAILABLE
-          : ClientException.Kind.WRITE_OUTCOME_UNKNOWN;
-    return ClientException.Kind.DRIVER_FAILURE;
+    error = FailureClassifier.unwrap(error);
+    if (error instanceof co.elastic.clients.elasticsearch._types.ElasticsearchException)
+      return FailureClassifier.http(
+          ((co.elastic.clients.elasticsearch._types.ElasticsearchException) error).status(),
+          operation);
+    if (error instanceof co.elastic.clients.transport.rest5_client.low_level.ResponseException)
+      return FailureClassifier.http(
+          ((co.elastic.clients.transport.rest5_client.low_level.ResponseException) error)
+              .getResponse()
+              .getStatusCode(),
+          operation);
+    return FailureClassifier.transport(error, operation);
   }
 
   @Override

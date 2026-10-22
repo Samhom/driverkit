@@ -25,12 +25,21 @@ public final class JedisAdapter implements DriverAdapter<RedisClient, RedisSetti
 
   @Override
   public ClientException.Kind classify(Throwable error, Operation operation) {
-    if (error instanceof redis.clients.jedis.exceptions.JedisConnectionException)
-      return operation.replaySafe()
-          ? ClientException.Kind.UNAVAILABLE
-          : ClientException.Kind.WRITE_OUTCOME_UNKNOWN;
+    error = FailureClassifier.unwrap(error);
+    if (error instanceof redis.clients.jedis.exceptions.JedisAccessControlException) {
+      String message = error.getMessage();
+      if (message != null && (message.startsWith("WRONGPASS ") || message.startsWith("NOAUTH ")))
+        return ClientException.Kind.AUTHENTICATION;
+      return ClientException.Kind.AUTHORIZATION;
+    }
+    if (error instanceof redis.clients.jedis.exceptions.JedisBusyException)
+      return ClientException.Kind.SERVER_REJECTED;
     if (error instanceof redis.clients.jedis.exceptions.JedisDataException)
       return ClientException.Kind.INVALID_REQUEST;
+    ClientException.Kind common = FailureClassifier.transport(error, operation);
+    if (common != ClientException.Kind.DRIVER_FAILURE) return common;
+    if (error instanceof redis.clients.jedis.exceptions.JedisConnectionException)
+      return FailureClassifier.uncertain(operation, ClientException.Kind.UNAVAILABLE);
     return ClientException.Kind.DRIVER_FAILURE;
   }
 
