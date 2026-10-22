@@ -104,6 +104,10 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     return resource;
   }
 
+  public AdapterCapabilities capabilities() {
+    return adapter.capabilities();
+  }
+
   public String driverId() {
     return adapter.id();
   }

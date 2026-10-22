@@ -6,7 +6,6 @@ import co.elastic.clients.transport.rest5_client.Rest5ClientTransport;
 import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
 import io.github.samhom.driverkit.core.*;
 import java.time.Duration;
-import java.util.Set;
 import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.message.BasicHeader;
@@ -134,7 +133,7 @@ public final class ElasticsearchAdapter
   }
 
   @Override
-  public Set<String> capabilities() {
-    return Set.of("SEARCH", "INDEX", "BULK", "PIT", "NATIVE_API");
+  public AdapterCapabilities capabilities() {
+    return AdapterCapabilities.nativeApi(false);
   }
 }

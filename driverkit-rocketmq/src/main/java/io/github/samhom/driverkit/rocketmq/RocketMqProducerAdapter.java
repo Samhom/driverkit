@@ -2,7 +2,6 @@ package io.github.samhom.driverkit.rocketmq;
 
 import io.github.samhom.driverkit.core.*;
 import java.time.Duration;
-import java.util.Set;
 import java.util.UUID;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 
@@ -63,7 +62,7 @@ public final class RocketMqProducerAdapter
   }
 
   @Override
-  public Set<String> capabilities() {
-    return Set.of("SEND", "ASYNC_SEND", "NATIVE_API");
+  public AdapterCapabilities capabilities() {
+    return AdapterCapabilities.nativeApi(true);
   }
 }

@@ -2,7 +2,6 @@ package io.github.samhom.driverkit.rocketmq.grpc;
 
 import io.github.samhom.driverkit.core.*;
 import java.time.Duration;
-import java.util.Set;
 import org.apache.rocketmq.client.apis.ClientServiceProvider;
 import org.apache.rocketmq.client.apis.producer.Producer;
 
@@ -51,7 +50,7 @@ public final class GrpcProducerAdapter implements DriverAdapter<Producer, GrpcSe
   }
 
   @Override
-  public Set<String> capabilities() {
-    return Set.of("SEND", "ASYNC_SEND", "TRANSACTION", "NATIVE_API");
+  public AdapterCapabilities capabilities() {
+    return AdapterCapabilities.nativeApi(true);
   }
 }

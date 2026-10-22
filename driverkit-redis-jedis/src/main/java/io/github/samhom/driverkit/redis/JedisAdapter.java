@@ -2,7 +2,6 @@ package io.github.samhom.driverkit.redis;
 
 import io.github.samhom.driverkit.core.*;
 import java.time.Duration;
-import java.util.Set;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import redis.clients.jedis.*;
 
@@ -91,7 +90,7 @@ public final class JedisAdapter implements DriverAdapter<RedisClient, RedisSetti
   }
 
   @Override
-  public Set<String> capabilities() {
-    return Set.of("KV", "PIPELINE", "TRANSACTION", "NATIVE_API");
+  public AdapterCapabilities capabilities() {
+    return AdapterCapabilities.nativeApi(false);
   }
 }

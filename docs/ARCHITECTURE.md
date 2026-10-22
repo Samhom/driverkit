@@ -70,3 +70,11 @@ Observer 接收不含载荷的逻辑操作元数据；每次调用或订阅仅�
 AdmissionPolicy 是快速本地准入扩展；内置按资源配置的令牌桶。DriverAdapter、ConsumerAdapter、ConfigurationSource、CredentialsProvider、Observer 为公开扩展点。配置只选择应用预先注册的实现，不加载远端代码或执行表达式。
 
 原生请求、资源池和逻辑业务调用有独立观测层次。当前核心不推测原生内部重试次数。产品特有路由、双写、事务或降级应提供明确的操作与一致性契约后接入。
+
+## 类型化能力契约
+
+`DriverAdapter.capabilities()` 返回不可变 `AdapterCapabilities`，通过枚举区分 `MANAGED`、`NATIVE_SESSION_ONLY` 和 `UNSUPPORTED`。`ManagedClient.capabilities()` 暴露当前适配器契约；调用方可用 `requireManaged` 在执行前拒绝未支持能力。该签名替代快照版本的字符串集合。
+
+`ASYNC` 表示原生异步阶段由受管句柄持有租约，不占用调用线程等待结果。同步 API 放入线程池不算原生异步。事务、流式结果、原生取消没有受管实现和验证证据，当前统一返回不支持；原生库本身具有这些方法不构成 SDK 支持承诺。取消受管结果只取消结果交付，已发出的原生工作继续持有租约直到完成。
+
+`CapabilityContractTest` 验证异步释放调用线程、取消后租约保留及迟到完成回收，并验证事务、流式结果和原生取消默认拒绝。产品模块的协议测试验证具体原生调用。

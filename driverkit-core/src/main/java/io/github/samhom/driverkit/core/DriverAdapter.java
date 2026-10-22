@@ -1,8 +1,6 @@
 package io.github.samhom.driverkit.core;
 
 import java.time.Duration;
-import java.util.Collections;
-import java.util.Set;
 
 /** A client generation owns every native resource created by its adapter. */
 public interface DriverAdapter<C, S> {
@@ -32,7 +30,7 @@ public interface DriverAdapter<C, S> {
     return ClientException.Kind.DRIVER_FAILURE;
   }
 
-  default Set<String> capabilities() {
-    return Collections.emptySet();
+  default AdapterCapabilities capabilities() {
+    return AdapterCapabilities.none();
   }
 }

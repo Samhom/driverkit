@@ -4,7 +4,6 @@ import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.ClusterOptions;
 import io.github.samhom.driverkit.core.*;
 import java.time.Duration;
-import java.util.Set;
 
 public final class CouchbaseAdapter implements DriverAdapter<Cluster, CouchbaseSettings> {
   @Override
@@ -74,8 +73,7 @@ public final class CouchbaseAdapter implements DriverAdapter<Cluster, CouchbaseS
   }
 
   @Override
-  public Set<String> capabilities() {
-    return Set.of(
-        "KV", "CAS", "COLLECTIONS", "QUERY", "TRANSACTION", "ASYNC", "REACTIVE", "NATIVE_API");
+  public AdapterCapabilities capabilities() {
+    return AdapterCapabilities.nativeApi(true);
   }
 }
