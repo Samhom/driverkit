@@ -87,7 +87,12 @@ public final class CouchbaseAdapter implements DriverAdapter<Cluster, CouchbaseS
     long nanos = deadline - System.nanoTime();
     if (nanos <= 0)
       throw new ClientException(ClientException.Kind.TIMEOUT, "Bucket readiness deadline exceeded");
-    client.bucket(settings.bucket()).waitUntilReady(Duration.ofNanos(nanos));
+    client
+        .bucket(settings.bucket())
+        .waitUntilReady(
+            Duration.ofNanos(nanos),
+            com.couchbase.client.java.diagnostics.WaitUntilReadyOptions.waitUntilReadyOptions()
+                .serviceTypes(com.couchbase.client.core.service.ServiceType.KV));
   }
 
   @Override
