@@ -78,3 +78,9 @@ AdmissionPolicy 是快速本地准入扩展；内置按资源配置的令牌桶�
 `ASYNC` 表示原生异步阶段由受管句柄持有租约，不占用调用线程等待结果。同步 API 放入线程池不算原生异步。事务、流式结果、原生取消没有受管实现和验证证据，当前统一返回不支持；原生库本身具有这些方法不构成 SDK 支持承诺。取消受管结果只取消结果交付，已发出的原生工作继续持有租约直到完成。
 
 `CapabilityContractTest` 验证异步释放调用线程、取消后租约保留及迟到完成回收，并验证事务、流式结果和原生取消默认拒绝。产品模块的协议测试验证具体原生调用。
+
+## Elasticsearch 原生异步
+
+`ManagedSearch` 的 `getAsync/indexAsync/deleteAsync/bulkAsync/searchAsync` 直接返回受管 Future。同步方法使用 `ManagedClient.executeAwait`，只阻塞调用者，不让调用线程池等待 HTTP 响应。异步视图通过原生 `ElasticsearchAsyncClient` 共享代际 Transport 及认证、响应大小和禁止重试配置；视图不单独关闭。批量验证和逐项错误保持原语义。
+
+原生异步共享 Transport 的依据：[Elastic 官方说明](https://www.elastic.co/docs/reference/elasticsearch/clients/java/api-conventions/blocking-async)。HTTP 协议测试以单个调用线程验证慢请求不阻塞后续请求，并验证切换代际、取消结果后旧 Transport 仍持有到真实完成。

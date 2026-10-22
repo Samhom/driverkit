@@ -134,6 +134,6 @@ public final class ElasticsearchAdapter
 
   @Override
   public AdapterCapabilities capabilities() {
-    return AdapterCapabilities.nativeApi(false);
+    return AdapterCapabilities.nativeApi(true);
   }
 }

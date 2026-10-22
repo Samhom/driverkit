@@ -347,15 +347,22 @@ public final class ManagedClient<C, S> implements AutoCloseable {
 
   public <T> T execute(Operation operation, Call<C, T> call) {
     Objects.requireNonNull(call, "call");
+    return executeAwait(
+        operation,
+        (client, context) -> CompletableFuture.completedFuture(call.execute(client, context)));
+  }
+
+  /**
+   * Wait on the caller while dispatching only the nonblocking native invocation on a call worker.
+   */
+  public <T> T executeAwait(Operation operation, AsyncCall<C, T> call) {
+    Objects.requireNonNull(call, "call");
     if (CompletionDispatcher.inCompletionThread())
       throw new ClientException(
           ClientException.Kind.INVALID_REQUEST,
           "Use asynchronous composition instead of a blocking SDK call inside a completion callback");
     try {
-      return executeAsync(
-              operation,
-              (client, context) -> CompletableFuture.completedFuture(call.execute(client, context)))
-          .get();
+      return executeAsync(operation, call).get();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new ClientException(

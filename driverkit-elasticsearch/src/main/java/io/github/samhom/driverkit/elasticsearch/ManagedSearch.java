@@ -1,11 +1,13 @@
 package io.github.samhom.driverkit.elasticsearch;
 
+import co.elastic.clients.elasticsearch.ElasticsearchAsyncClient;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.*;
 import co.elastic.clients.json.JsonData;
 import io.github.samhom.driverkit.core.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Full query DSL remains typed in the native client; common document operations have a compact
@@ -49,79 +51,121 @@ public final class ManagedSearch {
   }
 
   public GetResponse<JsonData> get(String index, String id) {
+    return client.executeAwait(Operation.read("get", timeout), getCall(index, id));
+  }
+
+  public CompletableFuture<GetResponse<JsonData>> getAsync(String index, String id) {
+    return client.executeAsync(Operation.read("get", timeout), getCall(index, id));
+  }
+
+  private AsyncCall<ElasticsearchClient, GetResponse<JsonData>> getCall(String index, String id) {
     index(index);
     id(id);
-    return client.execute(
-        Operation.read("get", timeout),
-        (nativeClient, context) ->
-            nativeClient.get(request -> request.index(index).id(id), JsonData.class));
+    return (nativeClient, context) ->
+        async(nativeClient).get(request -> request.index(index).id(id), JsonData.class);
   }
 
   public IndexResponse index(String index, String id, String json) {
+    return client.executeAwait(Operation.write("index", timeout), indexCall(index, id, json));
+  }
+
+  public CompletableFuture<IndexResponse> indexAsync(String index, String id, String json) {
+    return client.executeAsync(Operation.write("index", timeout), indexCall(index, id, json));
+  }
+
+  private AsyncCall<ElasticsearchClient, IndexResponse> indexCall(
+      String index, String id, String json) {
     index(index);
     id(id);
     Limits.bytes(json == null ? null : json.getBytes(StandardCharsets.UTF_8), maximumDocument);
     JsonData document = JsonData.fromJson(json);
-    return client.execute(
-        Operation.write("index", timeout),
-        (nativeClient, context) -> {
-          Limits.bytes(
-              json.getBytes(StandardCharsets.UTF_8),
-              Math.min(
-                  maximumDocument,
-                  context.settings(ElasticsearchSettings.class).maxDocumentBytes()));
-          return nativeClient.index(request -> request.index(index).id(id).document(document));
-        });
+    return (nativeClient, context) -> {
+      Limits.bytes(
+          json.getBytes(StandardCharsets.UTF_8),
+          Math.min(
+              maximumDocument, context.settings(ElasticsearchSettings.class).maxDocumentBytes()));
+      return async(nativeClient).index(request -> request.index(index).id(id).document(document));
+    };
   }
 
   public DeleteResponse delete(String index, String id) {
+    return client.executeAwait(Operation.write("delete", timeout), deleteCall(index, id));
+  }
+
+  public CompletableFuture<DeleteResponse> deleteAsync(String index, String id) {
+    return client.executeAsync(Operation.write("delete", timeout), deleteCall(index, id));
+  }
+
+  private AsyncCall<ElasticsearchClient, DeleteResponse> deleteCall(String index, String id) {
     index(index);
     id(id);
-    return client.execute(
-        Operation.write("delete", timeout),
-        (nativeClient, context) -> nativeClient.delete(request -> request.index(index).id(id)));
+    return (nativeClient, context) ->
+        async(nativeClient).delete(request -> request.index(index).id(id));
   }
 
   public BulkResponse bulk(BulkRequest request) {
+    return client.executeAwait(Operation.write("bulk", timeout), bulkCall(request));
+  }
+
+  public CompletableFuture<BulkResponse> bulkAsync(BulkRequest request) {
+    return client.executeAsync(Operation.write("bulk", timeout), bulkCall(request));
+  }
+
+  private AsyncCall<ElasticsearchClient, BulkResponse> bulkCall(BulkRequest request) {
     if (request == null
         || request.operations().isEmpty()
         || request.operations().size() > maximumBatch)
       throw new IllegalArgumentException("Bulk size out of bounds");
-    return client.execute(
-        Operation.write("bulk", timeout),
-        (nativeClient, context) -> {
-          ElasticsearchSettings current = context.settings(ElasticsearchSettings.class);
-          if (request.operations().size() > Math.min(maximumBatch, current.maxBatchItems()))
-            throw new IllegalArgumentException("Bulk size out of bounds");
-          int documentLimit = Math.min(maximumDocument, current.maxDocumentBytes());
-          ByteBudget budget = new ByteBudget(16 * 1024 * 1024);
-          for (co.elastic.clients.elasticsearch.core.bulk.BulkOperation operation :
-              request.operations()) {
-            java.util.Iterator<?> items = operation._serializables();
-            while (items.hasNext()) {
-              long before = budget.bytes();
-              try (jakarta.json.stream.JsonGenerator generator =
-                  nativeClient._jsonpMapper().jsonProvider().createGenerator(budget)) {
-                nativeClient._jsonpMapper().serialize(items.next(), generator);
-              }
-              if (budget.bytes() - before > documentLimit)
-                throw new IllegalArgumentException("Bulk document exceeds byte budget");
-              budget.write('\n');
-            }
+    return (nativeClient, context) -> {
+      ElasticsearchSettings current = context.settings(ElasticsearchSettings.class);
+      if (request.operations().size() > Math.min(maximumBatch, current.maxBatchItems()))
+        throw new IllegalArgumentException("Bulk size out of bounds");
+      int documentLimit = Math.min(maximumDocument, current.maxDocumentBytes());
+      ByteBudget budget = new ByteBudget(16 * 1024 * 1024);
+      for (co.elastic.clients.elasticsearch.core.bulk.BulkOperation operation :
+          request.operations()) {
+        java.util.Iterator<?> items = operation._serializables();
+        while (items.hasNext()) {
+          long before = budget.bytes();
+          try (jakarta.json.stream.JsonGenerator generator =
+              nativeClient._jsonpMapper().jsonProvider().createGenerator(budget)) {
+            nativeClient._jsonpMapper().serialize(items.next(), generator);
           }
-          BulkResponse response = nativeClient.bulk(request);
-          if (response.errors()) throw new PartialBulkFailure(response);
-          return response;
-        });
+          if (budget.bytes() - before > documentLimit)
+            throw new IllegalArgumentException("Bulk document exceeds byte budget");
+          budget.write('\n');
+        }
+      }
+      return async(nativeClient)
+          .bulk(request)
+          .thenApply(
+              response -> {
+                if (response.errors()) throw new PartialBulkFailure(response);
+                return response;
+              });
+    };
   }
 
   public <T> SearchResponse<T> search(SearchRequest request, Class<T> type) {
+    return client.executeAwait(Operation.read("search", timeout), searchCall(request, type));
+  }
+
+  public <T> CompletableFuture<SearchResponse<T>> searchAsync(
+      SearchRequest request, Class<T> type) {
+    return client.executeAsync(Operation.read("search", timeout), searchCall(request, type));
+  }
+
+  private <T> AsyncCall<ElasticsearchClient, SearchResponse<T>> searchCall(
+      SearchRequest request, Class<T> type) {
     if (request == null
         || (request.size() != null && (request.size() < 0 || request.size() > 10000)))
       throw new IllegalArgumentException("Search size out of bounds");
-    return client.execute(
-        Operation.read("search", timeout),
-        (nativeClient, context) -> nativeClient.search(request, type));
+    return (nativeClient, context) -> async(nativeClient).search(request, type);
+  }
+
+  private static ElasticsearchAsyncClient async(ElasticsearchClient client) {
+    // This view borrows the generation's transport. Only the adapter closes that transport.
+    return new ElasticsearchAsyncClient(client._transport(), client._transportOptions());
   }
 
   public ManagedClient<ElasticsearchClient, ElasticsearchSettings> handle() {

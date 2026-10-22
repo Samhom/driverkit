@@ -101,7 +101,52 @@ class ElasticsearchTransportTest {
     }
   }
 
+  @Test
+  void pendingNativeAsyncReleasesCallWorkerAndPinsTransportUntilCompletion() throws Exception {
+    try (SearchServer server = new SearchServer();
+        ClientRuntime runtime =
+            new ClientRuntime(1, 1, 4, io.github.samhom.driverkit.core.Observer.NOOP)) {
+      ElasticsearchSettings base = server.settings();
+      ElasticsearchSettings settings =
+          new ElasticsearchSettings(
+              base.endpoint(),
+              base.credentials(),
+              base.connectTimeout(),
+              Duration.ofSeconds(10),
+              4,
+              10,
+              1024);
+      ManagedClient<ElasticsearchClient, ElasticsearchSettings> handle =
+          runtime.register(
+              new ConfigSnapshot<>(RESOURCE, 1, settings),
+              new ElasticsearchAdapter(),
+              ClientPolicy.defaults());
+      ManagedSearch search = new ManagedSearch(handle, settings);
+      handle.capabilities().requireManaged(AdapterCapabilities.Feature.ASYNC);
+      CompletableFuture<?> pending = search.getAsync("slow", "a");
+      try {
+        assertTrue(server.slowEntered.await(3, TimeUnit.SECONDS));
+        assertTrue(search.getAsync("catalog", "a").get(3, TimeUnit.SECONDS).found());
+        assertEquals(
+            UpdateResult.APPLIED, handle.reload(new ConfigSnapshot<>(RESOURCE, 2, settings)));
+        assertEquals(1, handle.status().retiringGenerations());
+        assertTrue(pending.cancel(false));
+        assertEquals(1, handle.status().inFlight());
+        server.slowRelease.countDown();
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        while (handle.status().retiringGenerations() != 0 && System.nanoTime() < until)
+          Thread.yield();
+        assertEquals(0, handle.status().retiringGenerations());
+        assertEquals(0, handle.status().inFlight());
+        assertTrue(search.get("catalog", "a").found());
+      } finally {
+        server.slowRelease.countDown();
+      }
+    }
+  }
+
   private static final class SearchServer implements AutoCloseable {
+    final CountDownLatch slowEntered = new CountDownLatch(1), slowRelease = new CountDownLatch(1);
     final String password = UUID.randomUUID().toString();
     final String authorization =
         "Basic "
@@ -154,6 +199,15 @@ class ElasticsearchTransportTest {
           return;
         }
         String path = exchange.getRequestURI().getPath(), body;
+        if (path.startsWith("/slow/")) {
+          slowEntered.countDown();
+          try {
+            if (!slowRelease.await(10, TimeUnit.SECONDS)) throw new IOException("Fixture deadline");
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(e);
+          }
+        }
         int status = 200;
         if (path.startsWith("/limited/")) {
           limited.incrementAndGet();
