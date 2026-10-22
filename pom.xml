@@ -42,6 +42,7 @@
     <module>driverkit-observe-opentelemetry</module>
     <module>driverkit-reactor</module>
     <module>driverkit-redis-jedis</module>
+    <module>driverkit-elasticsearch-transport</module>
     <module>driverkit-elasticsearch</module>
     <module>driverkit-couchbase</module>
     <module>driverkit-rocketmq-transport</module>

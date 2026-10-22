@@ -96,6 +96,7 @@
         <artifactId>driverkit-couchbase</artifactId>
         <version>${project.version}</version>
       </dependency>
+      <dependency><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-elasticsearch-transport</artifactId><version>${project.version}</version></dependency>
       <dependency><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-rocketmq-transport</artifactId><version>${project.version}</version></dependency>
       <dependency>
         <groupId>io.github.samhom.driverkit</groupId>

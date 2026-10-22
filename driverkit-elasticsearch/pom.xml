@@ -18,6 +18,8 @@
       <groupId>co.elastic.clients</groupId>
       <artifactId>elasticsearch-java</artifactId>
       <version>${elasticsearch.version}</version>
+      <exclusions><exclusion><groupId>co.elastic.clients</groupId><artifactId>elasticsearch-rest5-client</artifactId></exclusion></exclusions>
     </dependency>
+    <dependency><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-elasticsearch-transport</artifactId><version>${project.version}</version></dependency>
   </dependencies>
 </project>

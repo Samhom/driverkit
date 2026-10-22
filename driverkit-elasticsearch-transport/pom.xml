@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+  <artifactId>driverkit-elasticsearch-transport</artifactId>
+  <description>Version-locked Rest5 9.5.5 rebuild preserving per-request HTTP budgets.</description>
+  <dependencies>
+    <dependency><groupId>co.elastic.clients</groupId><artifactId>elasticsearch-rest5-client</artifactId><version>9.5.5</version><scope>provided</scope><optional>true</optional></dependency>
+    <dependency><groupId>org.apache.httpcomponents.client5</groupId><artifactId>httpclient5</artifactId><version>5.6.3</version></dependency>
+    <dependency><groupId>commons-logging</groupId><artifactId>commons-logging</artifactId><version>1.3.5</version></dependency>
+    <dependency><groupId>jakarta.json</groupId><artifactId>jakarta.json-api</artifactId><version>2.1.3</version></dependency>
+    <dependency><groupId>org.eclipse.parsson</groupId><artifactId>parsson</artifactId><version>1.1.9</version><scope>runtime</scope></dependency>
+  </dependencies>
+  <build><plugins>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><version>3.8.1</version><executions><execution>
+      <id>fixed-upstream-inputs</id><phase>generate-sources</phase><goals><goal>copy</goal></goals><configuration><artifactItems>
+        <artifactItem><groupId>co.elastic.clients</groupId><artifactId>elasticsearch-rest5-client</artifactId><version>9.5.5</version><type>jar</type><outputDirectory>${project.build.directory}/upstream</outputDirectory></artifactItem>
+        <artifactItem><groupId>co.elastic.clients</groupId><artifactId>elasticsearch-rest5-client</artifactId><version>9.5.5</version><type>jar</type><classifier>sources</classifier><outputDirectory>${project.build.directory}/upstream</outputDirectory></artifactItem>
+      </artifactItems></configuration>
+    </execution></executions></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><version>3.2.0</version><executions><execution>
+      <id>request-budget-patch</id><phase>generate-sources</phase><goals><goal>run</goal></goals><configuration><target>
+        <checksum file="${project.build.directory}/upstream/elasticsearch-rest5-client-9.5.5.jar" algorithm="SHA-256" property="upstream.binary.sha"/>
+        <checksum file="${project.build.directory}/upstream/elasticsearch-rest5-client-9.5.5-sources.jar" algorithm="SHA-256" property="upstream.sources.sha"/>
+        <fail message="Upstream inputs changed: review the request budget patch before building"><condition><not><and>
+          <equals arg1="${upstream.binary.sha}" arg2="4a336b5f99b1a6e9554b50732e49a4690066cfc59ec3bcd65cdab1cc62f3424c"/>
+          <equals arg1="${upstream.sources.sha}" arg2="bdf93b97192a323cfdf0cf41081d30a4643f99da049699c1698100814957f225"/>
+        </and></not></condition></fail>
+        <unzip src="${project.build.directory}/upstream/elasticsearch-rest5-client-9.5.5.jar" dest="${project.build.outputDirectory}"><patternset><exclude name="co/elastic/clients/transport/rest5_client/low_level/Rest5Client.class"/><exclude name="co/elastic/clients/transport/rest5_client/low_level/Rest5Client$*.class"/><exclude name="META-INF/MANIFEST.MF"/></patternset></unzip>
+        <unzip src="${project.build.directory}/upstream/elasticsearch-rest5-client-9.5.5-sources.jar" dest="${project.build.directory}/generated-sources/upstream"><patternset><include name="co/elastic/clients/transport/rest5_client/low_level/Rest5Client.java"/></patternset></unzip>
+        <replace file="${project.build.directory}/generated-sources/upstream/co/elastic/clients/transport/rest5_client/low_level/Rest5Client.java" failOnNoReplacements="true"
+          token="this.context = HttpClientContext.create();" value="this.context = HttpClientContext.create(); if (request.httpRequest.getConfig() != null) this.context.setRequestConfig(request.httpRequest.getConfig());"/>
+      </target></configuration>
+    </execution></executions></plugin>
+    <plugin><groupId>org.codehaus.mojo</groupId><artifactId>build-helper-maven-plugin</artifactId><version>3.6.1</version><executions><execution>
+      <id>patched-source</id><phase>generate-sources</phase><goals><goal>add-source</goal></goals><configuration><sources><source>${project.build.directory}/generated-sources/upstream</source></sources></configuration>
+    </execution></executions></plugin>
+    <plugin><groupId>com.spotify.fmt</groupId><artifactId>fmt-maven-plugin</artifactId><configuration><sourceDirectory>${project.basedir}/src/main/java</sourceDirectory></configuration></plugin>
+  </plugins></build>
+</project>

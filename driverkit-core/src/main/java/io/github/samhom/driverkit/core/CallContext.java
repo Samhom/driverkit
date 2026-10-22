@@ -23,6 +23,13 @@ public final class CallContext {
     return Duration.ofNanos(Math.max(0, deadline - System.nanoTime()));
   }
 
+  /** Positive milliseconds for native APIs; zero must never become an infinite native timeout. */
+  public int remainingMillis(Duration ceiling) {
+    checkDeadline();
+    long nanos = Math.min(remaining().toNanos(), Limits.timeout(ceiling).toNanos());
+    return (int) Math.max(1, Math.min(Integer.MAX_VALUE, (nanos + 999999) / 1000000));
+  }
+
   public void checkDeadline() {
     if (remaining().isZero())
       throw new ClientException(ClientException.Kind.TIMEOUT, "Operation deadline exceeded");

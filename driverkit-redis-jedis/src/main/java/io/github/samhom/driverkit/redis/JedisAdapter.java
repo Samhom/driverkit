@@ -43,21 +43,44 @@ public final class JedisAdapter implements DriverAdapter<RedisClient, RedisSetti
     pool.setBlockWhenExhausted(true);
     pool.setMaxWait(settings.connectTimeout());
     try (Credentials credentials = settings.credentials().resolve()) {
-      DefaultJedisClientConfig config =
-          DefaultJedisClientConfig.builder()
-              .serverDefaultProtocol()
-              .connectionTimeoutMillis(Math.toIntExact(settings.connectTimeout().toMillis()))
-              .socketTimeoutMillis(Math.toIntExact(settings.readTimeout().toMillis()))
-              .ssl(settings.endpoint().tls())
-              .user(credentials.username().isEmpty() ? null : credentials.username())
-              .password(credentials.passwordText())
-              .database(settings.database())
-              .build();
-      return RedisClient.builder()
-          .hostAndPort(settings.endpoint().host(), settings.endpoint().port())
-          .clientConfig(config)
-          .poolConfig(pool)
-          .build();
+      String username = credentials.username().isEmpty() ? null : credentials.username();
+      String password = credentials.passwordText();
+      java.util.function.Supplier<DefaultJedisClientConfig> config =
+          () -> {
+            javax.net.ssl.SSLParameters ssl = new javax.net.ssl.SSLParameters();
+            ssl.setEndpointIdentificationAlgorithm("HTTPS");
+            return DefaultJedisClientConfig.builder()
+                .serverDefaultProtocol()
+                .connectionTimeoutMillis(RedisCallBudget.cap(settings.connectTimeout()))
+                .socketTimeoutMillis(RedisCallBudget.cap(settings.readTimeout()))
+                .ssl(settings.endpoint().tls())
+                .sslParameters(ssl)
+                .user(username)
+                .password(password)
+                .database(settings.database())
+                .build();
+          };
+      HostAndPort host = new HostAndPort(settings.endpoint().host(), settings.endpoint().port());
+      ConnectionFactory factory =
+          new ConnectionFactory(host, config.get()) {
+            @Override
+            public org.apache.commons.pool2.PooledObject<Connection> makeObject() {
+              return new org.apache.commons.pool2.impl.DefaultPooledObject<>(
+                  new Connection(host, config.get()));
+            }
+          };
+      redis.clients.jedis.providers.PooledConnectionProvider provider =
+          new redis.clients.jedis.providers.PooledConnectionProvider(factory, pool);
+      try {
+        return RedisClient.builder()
+            .hostAndPort(host)
+            .clientConfig(config.get())
+            .connectionProvider(provider)
+            .build();
+      } catch (RuntimeException | Error failure) {
+        provider.close();
+        throw failure;
+      }
     }
   }
 

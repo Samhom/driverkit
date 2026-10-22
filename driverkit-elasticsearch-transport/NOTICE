@@ -1,0 +1,5 @@
+DriverKit contains a modified rebuild of Elastic elasticsearch-rest5-client 9.5.5.
+Upstream: https://github.com/elastic/elasticsearch-java
+License: Apache License, Version 2.0 (upstream META-INF retained).
+Modification: Rest5Client.RequestContext copies per-request RequestConfig into HttpClientContext.
+Binary and sources SHA-256 checks in pom.xml pin the reviewed inputs.

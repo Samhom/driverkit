@@ -117,7 +117,54 @@ class JedisTransportTest {
     assertEquals("RedisSettings{redacted}", settings.toString());
   }
 
+  @Test
+  void exhaustedPoolAndSlowReadReleaseNativeCapacityWithinCallBudget() throws Exception {
+    try (RespServer server = new RespServer();
+        ClientRuntime runtime = new ClientRuntime()) {
+      RedisSettings base = server.settings();
+      RedisSettings settings =
+          new RedisSettings(
+              base.endpoint(),
+              base.credentials(),
+              Duration.ofSeconds(5),
+              Duration.ofSeconds(5),
+              1,
+              0,
+              1024);
+      ManagedClient<RedisClient, RedisSettings> handle =
+          runtime.register(
+              new ConfigSnapshot<>(RESOURCE, 1, settings),
+              new JedisAdapter(),
+              ClientPolicy.defaults());
+      ManagedRedis redis = new ManagedRedis(handle, Duration.ofMillis(150), 1024);
+      try (ClientSession<RedisClient> session = handle.session();
+          redis.clients.jedis.Connection held = session.client().getPool().getResource()) {
+        assertThrows(ClientException.class, () -> redis.get("waiting"));
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        while (handle.status().inFlight() != 1 && System.nanoTime() < until) Thread.yield();
+        assertEquals(
+            1,
+            handle.status().inFlight(),
+            "timed-out borrow must not occupy a worker for 5 seconds");
+      }
+      try {
+        assertThrows(ClientException.class, () -> redis.get("slow"));
+        assertTrue(server.slowEntered.await(1, TimeUnit.SECONDS));
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        while (handle.status().inFlight() != 0 && System.nanoTime() < until) Thread.yield();
+        assertEquals(
+            0,
+            handle.status().inFlight(),
+            "native read must end without waiting for fixture release");
+      } finally {
+        server.slowRelease.countDown();
+      }
+      assertNull(redis.get("recovered"));
+    }
+  }
+
   private static final class RespServer implements AutoCloseable {
+    final CountDownLatch slowEntered = new CountDownLatch(1), slowRelease = new CountDownLatch(1);
     final String password = UUID.randomUUID().toString();
     final AtomicInteger authentications = new AtomicInteger(), writes = new AtomicInteger();
     final Map<String, String> values = new ConcurrentHashMap<>();
@@ -198,6 +245,15 @@ class JedisTransportTest {
                 response = "+OK\r\n";
               }
               case "GET" -> {
+                if (args.get(1).equals("slow")) {
+                  slowEntered.countDown();
+                  try {
+                    slowRelease.await(5, TimeUnit.SECONDS);
+                  } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                  }
+                }
                 String value = values.get(args.get(1));
                 response =
                     value == null

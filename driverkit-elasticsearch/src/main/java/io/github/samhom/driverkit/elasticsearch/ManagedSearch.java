@@ -62,7 +62,7 @@ public final class ManagedSearch {
     index(index);
     id(id);
     return (nativeClient, context) ->
-        async(nativeClient).get(request -> request.index(index).id(id), JsonData.class);
+        async(nativeClient, context).get(request -> request.index(index).id(id), JsonData.class);
   }
 
   public IndexResponse index(String index, String id, String json) {
@@ -84,7 +84,8 @@ public final class ManagedSearch {
           json.getBytes(StandardCharsets.UTF_8),
           Math.min(
               maximumDocument, context.settings(ElasticsearchSettings.class).maxDocumentBytes()));
-      return async(nativeClient).index(request -> request.index(index).id(id).document(document));
+      return async(nativeClient, context)
+          .index(request -> request.index(index).id(id).document(document));
     };
   }
 
@@ -100,7 +101,7 @@ public final class ManagedSearch {
     index(index);
     id(id);
     return (nativeClient, context) ->
-        async(nativeClient).delete(request -> request.index(index).id(id));
+        async(nativeClient, context).delete(request -> request.index(index).id(id));
   }
 
   public BulkResponse bulk(BulkRequest request) {
@@ -136,7 +137,7 @@ public final class ManagedSearch {
           budget.write('\n');
         }
       }
-      return async(nativeClient)
+      return async(nativeClient, context)
           .bulk(request)
           .thenApply(
               response -> {
@@ -160,12 +161,31 @@ public final class ManagedSearch {
     if (request == null
         || (request.size() != null && (request.size() < 0 || request.size() > 10000)))
       throw new IllegalArgumentException("Search size out of bounds");
-    return (nativeClient, context) -> async(nativeClient).search(request, type);
+    return (nativeClient, context) -> async(nativeClient, context).search(request, type);
   }
 
-  private static ElasticsearchAsyncClient async(ElasticsearchClient client) {
+  private static ElasticsearchAsyncClient async(ElasticsearchClient client, CallContext context) {
     // This view borrows the generation's transport. Only the adapter closes that transport.
-    return new ElasticsearchAsyncClient(client._transport(), client._transportOptions());
+    ElasticsearchSettings settings = context.settings(ElasticsearchSettings.class);
+    co.elastic.clients.transport.rest5_client.Rest5ClientOptions.Builder options =
+        (co.elastic.clients.transport.rest5_client.Rest5ClientOptions.Builder)
+            client._transportOptions().toBuilder();
+    options
+        .restClientRequestOptionsBuilder()
+        .setRequestConfig(
+            org.apache.hc.client5.http.config.RequestConfig.custom()
+                .setConnectionRequestTimeout(
+                    org.apache.hc.core5.util.Timeout.ofMilliseconds(
+                        context.remainingMillis(settings.connectTimeout())))
+                .setConnectTimeout(
+                    org.apache.hc.core5.util.Timeout.ofMilliseconds(
+                        context.remainingMillis(settings.connectTimeout())))
+                .setResponseTimeout(
+                    org.apache.hc.core5.util.Timeout.ofMilliseconds(
+                        context.remainingMillis(settings.readTimeout())))
+                .setRedirectsEnabled(false)
+                .build());
+    return new ElasticsearchAsyncClient(client._transport(), options.build());
   }
 
   public ManagedClient<ElasticsearchClient, ElasticsearchSettings> handle() {

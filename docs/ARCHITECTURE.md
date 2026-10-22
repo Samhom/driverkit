@@ -84,3 +84,13 @@ AdmissionPolicy 是快速本地准入扩展；内置按资源配置的令牌桶�
 `ManagedSearch` 的 `getAsync/indexAsync/deleteAsync/bulkAsync/searchAsync` 直接返回受管 Future。同步方法使用 `ManagedClient.executeAwait`，只阻塞调用者，不让调用线程池等待 HTTP 响应。异步视图通过原生 `ElasticsearchAsyncClient` 共享代际 Transport 及认证、响应大小和禁止重试配置；视图不单独关闭。批量验证和逐项错误保持原语义。
 
 原生异步共享 Transport 的依据：[Elastic 官方说明](https://www.elastic.co/docs/reference/elasticsearch/clients/java/api-conventions/blocking-async)。HTTP 协议测试以单个调用线程验证慢请求不阻塞后续请求，并验证切换代际、取消结果后旧 Transport 仍持有到真实完成。
+
+## 调用剩余预算
+
+`CallContext.remainingMillis(ceiling)` 统一使用单调时钟，并向上取整到至少 1ms，过期时直接拒绝，防止原生 API 把 0 解释为无限等待。Redis 门面按每次调用的预算借连接，不修改共享池配置；连接新建时使用线程局部预算限制连接与认证读取，命令读取再次扣除借连接时间，归还前恢复超时，坏连接作废。预算线程局部值在 finally 中恢复。
+
+ES 每次同步或异步调用复制 TransportOptions，保留认证、响应上限和禁止重试，限制连接池等待、请求连接和响应超时。动态设置与门面初始上限取更小值。协议测试验证池耗尽及不返回响应时，物理租约在短预算附近回收。
+
+预算是原生 API 可表达的阶段上限；JVM DNS、TLS 提供者、操作系统阻塞写入及原生会话自定义代码不保证精确中断。各阶段可能存在毫秒取整和调度延迟，超时不代表写入回滚。外层截止仍负责结果交付，真实完成之前仍保留租约。旧版迁移适配器只保证初始化预算，旧版原生会话须由调用者传递操作预算。
+
+Rest5 9.5.5 的 `RequestContext` 创建 HttpClientContext 时遗失 RequestOptions 中的 RequestConfig。`driverkit-elasticsearch-transport` 使用官方二进制和源码 SHA-256 固定输入，只重新编译 Rest5Client，将 RequestConfig 复制到实际 HTTP 上下文；适配器排除原包。部署时不可再次引入原始同名类的 JAR。升级原生驱动必须重新审查补丁和协议测试。

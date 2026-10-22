@@ -145,6 +145,41 @@ class ElasticsearchTransportTest {
     }
   }
 
+  @Test
+  void perRequestBudgetReclaimsPhysicalHttpLeaseBeforeConfiguredReadTimeout() throws Exception {
+    try (SearchServer server = new SearchServer();
+        ClientRuntime runtime = new ClientRuntime()) {
+      ElasticsearchSettings base = server.settings();
+      ElasticsearchSettings settings =
+          new ElasticsearchSettings(
+              base.endpoint(),
+              base.credentials(),
+              base.connectTimeout(),
+              Duration.ofSeconds(5),
+              2,
+              10,
+              1024);
+      ManagedClient<ElasticsearchClient, ElasticsearchSettings> handle =
+          runtime.register(
+              new ConfigSnapshot<>(RESOURCE, 1, settings),
+              new ElasticsearchAdapter(),
+              ClientPolicy.defaults());
+      // Facade ceiling is shorter than the generation's native defaults.
+      ManagedSearch search = new ManagedSearch(handle, base);
+      try {
+        CompletableFuture<?> pending = search.getAsync("slow", "a");
+        assertTrue(server.slowEntered.await(2, TimeUnit.SECONDS));
+        assertThrows(ExecutionException.class, () -> pending.get(3, TimeUnit.SECONDS));
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        while (handle.status().inFlight() != 0 && System.nanoTime() < until) Thread.yield();
+        assertEquals(0, handle.status().inFlight());
+      } finally {
+        server.slowRelease.countDown();
+      }
+      assertTrue(search.get("catalog", "a").found());
+    }
+  }
+
   private static final class SearchServer implements AutoCloseable {
     final CountDownLatch slowEntered = new CountDownLatch(1), slowRelease = new CountDownLatch(1);
     final String password = UUID.randomUUID().toString();

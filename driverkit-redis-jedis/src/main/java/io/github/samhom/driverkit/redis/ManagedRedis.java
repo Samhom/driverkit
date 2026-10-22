@@ -26,7 +26,9 @@ public final class ManagedRedis {
   public String get(String key) {
     key(key);
     return client.execute(
-        Operation.read("get", timeout), (nativeClient, context) -> nativeClient.get(key));
+        Operation.read("get", timeout),
+        (nativeClient, context) ->
+            RedisCallBudget.execute(nativeClient, context, jedis -> jedis.get(key)));
   }
 
   public void set(String key, String value, Duration ttl) {
@@ -42,20 +44,27 @@ public final class ManagedRedis {
           Limits.bytes(
               value.getBytes(StandardCharsets.UTF_8),
               Math.min(maxValueBytes, context.settings(RedisSettings.class).maxValueBytes()));
-          return nativeClient.set(key, value, SetParams.setParams().px(ttl.toMillis()));
+          return RedisCallBudget.execute(
+              nativeClient,
+              context,
+              jedis -> jedis.set(key, value, SetParams.setParams().px(ttl.toMillis())));
         });
   }
 
   public long increment(String key) {
     key(key);
     return client.execute(
-        Operation.write("incr", timeout), (nativeClient, context) -> nativeClient.incr(key));
+        Operation.write("incr", timeout),
+        (nativeClient, context) ->
+            RedisCallBudget.execute(nativeClient, context, jedis -> jedis.incr(key)));
   }
 
   public long delete(String key) {
     key(key);
     return client.execute(
-        Operation.write("del", timeout), (nativeClient, context) -> nativeClient.del(key));
+        Operation.write("del", timeout),
+        (nativeClient, context) ->
+            RedisCallBudget.execute(nativeClient, context, jedis -> jedis.del(key)));
   }
 
   public ManagedClient<RedisClient, RedisSettings> handle() {
