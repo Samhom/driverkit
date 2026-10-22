@@ -6,9 +6,36 @@ import java.time.Duration;
 public final class CallContext {
   private final long deadline;
   private Object settings;
+  private final ContextPropagation.Snapshot snapshot;
 
   CallContext(Duration timeout) {
+    this(timeout, CallContexts.capture());
+  }
+
+  CallContext(Duration timeout, ContextPropagation.Snapshot snapshot) {
+    this.snapshot = java.util.Objects.requireNonNull(snapshot);
     deadline = System.nanoTime() + timeout.toNanos();
+  }
+
+  public ContextPropagation.Scope openScope() {
+    return snapshot.open();
+  }
+
+  public Runnable wrap(Runnable callback) {
+    return () -> snapshot.run(callback);
+  }
+
+  public <T, U> java.util.function.BiConsumer<T, U> wrap(
+      java.util.function.BiConsumer<T, U> callback) {
+    return (value, error) -> snapshot.run(() -> callback.accept(value, error));
+  }
+
+  public <T, R> java.util.function.Function<T, R> wrap(java.util.function.Function<T, R> callback) {
+    return value -> {
+      try (ContextPropagation.Scope ignored = snapshot.open()) {
+        return callback.apply(value);
+      }
+    };
   }
 
   void bindSettings(Object settings) {

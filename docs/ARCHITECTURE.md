@@ -94,3 +94,13 @@ ES 每次同步或异步调用复制 TransportOptions，保留认证、响应上
 预算是原生 API 可表达的阶段上限；JVM DNS、TLS 提供者、操作系统阻塞写入及原生会话自定义代码不保证精确中断。各阶段可能存在毫秒取整和调度延迟，超时不代表写入回滚。外层截止仍负责结果交付，真实完成之前仍保留租约。旧版迁移适配器只保证初始化预算，旧版原生会话须由调用者传递操作预算。
 
 Rest5 9.5.5 的 `RequestContext` 创建 HttpClientContext 时遗失 RequestOptions 中的 RequestConfig。`driverkit-elasticsearch-transport` 使用官方二进制和源码 SHA-256 固定输入，只重新编译 Rest5Client，将 RequestConfig 复制到实际 HTTP 上下文；适配器排除原包。部署时不可再次引入原始同名类的 JAR。升级原生驱动必须重新审查补丁和协议测试。
+
+## 上下文传播
+
+核心使用 `ContextPropagation` 捕获不可变快照并在每次进入线程时打开/恢复作用域。`ClientRuntime` 的八参数构造器接受扩展传播器，默认仅传播 `CallContexts` 的受信任服务端元数据；调用方可通过 `CallContexts.open(Map)` 建立请求作用域，最多 32 个字段、每值 512 字符，且不允许换行。此机制不验证身份或替代资源授权，不得直接把客户端自报身份 Header 填入后当作鉴权凭据。元数据不自动写入日志或指标。
+
+追踪模块提供 `OpenTelemetryContextPropagation` 和显式 MDC 字段白名单 `MdcContextPropagation(Set)`，可用 `ContextPropagation.combine` 组合并传给运行时。MDC 需要应用自身的 SLF4J 提供者；SDK 不安装日志后端，SLF4J API 为可选依赖。捕获、调用工作、原生完成处理、结果交付及同步取消均有作用域；线程原有值在 finally 中恢复。原生 API 内业务自行注册的回调或额外执行器须通过 `CallContext.wrap` 包装，SDK 无法接管任意第三方线程。
+
+Reactor 在请求作用域中用 `.contextWrite(ReactorCalls.context(propagation))` 捕获快照，订阅时恢复再捕获到受管调用；`ReactorCalls.mono` 将订阅者 Reactor Context 继续传给原生 Mono。无需安装全局 Hooks。额外 `publishOn` 后的业务执行器仍应使用对应框架的上下文桥接。
+
+测试覆盖成功、错误、超时、取消、线程复用、传播器打开失败回滚、原生迟到完成和 Reactor 调度切换。

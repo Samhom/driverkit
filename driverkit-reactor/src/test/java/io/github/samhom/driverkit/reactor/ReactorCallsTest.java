@@ -10,6 +10,39 @@ import reactor.core.publisher.Mono;
 
 class ReactorCallsTest {
   @Test
+  void reactorSubscriptionContextCrossesSchedulerAndWorkerBoundaries() {
+    try (ClientRuntime runtime = new ClientRuntime()) {
+      ManagedClient<String, String> client =
+          runtime.register(
+              new ConfigSnapshot<>(new ResourceId("reactor", "test", "context"), 1, "native"),
+              new FactoryAdapter<>("fixture", s -> s, (c, t) -> {}, c -> {}),
+              ClientPolicy.defaults());
+      Mono<String> publisher;
+      try (ContextPropagation.Scope ignored =
+          CallContexts.open(java.util.Map.of("request", "captured"))) {
+        publisher =
+            ReactorCalls.mono(
+                    client,
+                    Operation.read("get", Duration.ofSeconds(2)),
+                    (c, ctx) ->
+                        Mono.deferContextual(
+                            view -> {
+                              assertEquals("value", view.get("reactor-field"));
+                              return Mono.just(CallContexts.current().get("request"));
+                            }))
+                .contextWrite(context -> context.put("reactor-field", "value"))
+                .contextWrite(ReactorCalls.context(ContextPropagation.NONE));
+      }
+      assertEquals(
+          "captured",
+          publisher
+              .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+              .block(Duration.ofSeconds(3)));
+      assertTrue(CallContexts.current().isEmpty());
+    }
+  }
+
+  @Test
   void createsOneInvocationPerSubscriptionAndPreservesEmptyCompletion() {
     AtomicInteger subscriptions = new AtomicInteger(), observations = new AtomicInteger();
     FactoryAdapter<String, String> adapter =

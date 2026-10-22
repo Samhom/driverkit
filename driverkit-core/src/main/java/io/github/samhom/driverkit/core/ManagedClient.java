@@ -384,7 +384,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     Objects.requireNonNull(operation, "operation");
     Objects.requireNonNull(call, "call");
     long started = System.nanoTime();
-    CallContext context = new CallContext(operation.timeout());
+    CallContext context = new CallContext(operation.timeout(), runtime.propagation.capture());
     CompletionDispatcher.Reservation completion = null;
     ClientSession<C> lease;
     try {
@@ -488,9 +488,17 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       long elapsed = System.nanoTime() - start;
       completion.deliver(
           () -> {
-            observe(outcome, elapsed);
-            if (error == null) result.complete(value);
-            else result.completeExceptionally(error);
+            try (ContextPropagation.Scope ignored = context.openScope()) {
+              observe(outcome, elapsed);
+              if (error == null) result.complete(value);
+              else result.completeExceptionally(error);
+            } catch (Throwable propagationFailure) {
+              result.completeExceptionally(
+                  new ClientException(
+                      ClientException.Kind.DRIVER_FAILURE,
+                      "Context propagation failed",
+                      propagationFailure));
+            }
           });
     }
 
@@ -499,10 +507,19 @@ public final class ManagedClient<C, S> implements AutoCloseable {
         if (!select()) return result.isCancelled();
       }
       long elapsed = System.nanoTime() - start;
-      completion.deliver(() -> observe(Observation.Outcome.CANCELLED, elapsed));
+      completion.deliver(
+          () -> {
+            try (ContextPropagation.Scope ignored = context.openScope()) {
+              observe(Observation.Outcome.CANCELLED, elapsed);
+            }
+          });
       // Explicit caller cancellation keeps CompletableFuture's immediate state change and runs
       // its synchronous dependents on that caller, never a driver or timer thread.
-      return result.cancelDirectly();
+      try (ContextPropagation.Scope ignored = context.openScope()) {
+        return result.cancelDirectly();
+      } catch (RuntimeException | LinkageError failure) {
+        return result.cancelDirectly();
+      }
     }
 
     void abort() {
@@ -575,26 +592,29 @@ public final class ManagedClient<C, S> implements AutoCloseable {
           }
           started = true;
         }
-        AutoCloseable scope;
-        try {
-          scope = observation.openScope();
-        } catch (RuntimeException | LinkageError ignored) {
-          scope = () -> {};
-        }
         CompletionStage<T> nativeResult;
-        try {
-          nativeResult =
-              Objects.requireNonNull(
-                  call.execute(lease.client(), context),
-                  "Native operation returned no completion stage");
-        } finally {
+        try (ContextPropagation.Scope propagated = context.openScope()) {
+          AutoCloseable scope;
           try {
-            scope.close();
-          } catch (Exception | LinkageError ignored) {
+            scope = observation.openScope();
+          } catch (RuntimeException | LinkageError ignored) {
+            scope = () -> {};
+          }
+          try {
+            nativeResult =
+                Objects.requireNonNull(
+                    call.execute(lease.client(), context),
+                    "Native operation returned no completion stage");
+          } finally {
+            try {
+              scope.close();
+            } catch (Exception | LinkageError ignored) {
+            }
           }
         }
         nativeResult.whenComplete(
-            (value, error) ->
+            (value, error) -> {
+              try (ContextPropagation.Scope ignored = context.openScope()) {
                 finish(
                     value,
                     error == null ? null : translate(error, operation),
@@ -602,7 +622,11 @@ public final class ManagedClient<C, S> implements AutoCloseable {
                         ? Observation.Outcome.SUCCESS
                         : unwrap(error) instanceof CancellationException
                             ? Observation.Outcome.CANCELLED
-                            : Observation.Outcome.ERROR));
+                            : Observation.Outcome.ERROR);
+              } catch (Throwable failure) {
+                finish(null, translate(failure, operation), Observation.Outcome.ERROR);
+              }
+            });
       } catch (Throwable error) {
         finish(null, translate(error, operation), Observation.Outcome.ERROR);
       }

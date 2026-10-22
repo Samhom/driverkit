@@ -21,6 +21,7 @@ public final class ClientRuntime implements AutoCloseable {
   private final int maxClients;
   private final Observer observer;
   final AdmissionPolicy admission;
+  final ContextPropagation propagation;
   final ThreadPoolExecutor calls;
   final ThreadPoolExecutor maintenance;
   final ScheduledThreadPoolExecutor timers;
@@ -60,12 +61,34 @@ public final class ClientRuntime implements AutoCloseable {
       AdmissionPolicy admission,
       int callbackThreads,
       int callbackCapacity) {
+    this(
+        maxClients,
+        callThreads,
+        queuedCalls,
+        observer,
+        admission,
+        callbackThreads,
+        callbackCapacity,
+        ContextPropagation.NONE);
+  }
+
+  public ClientRuntime(
+      int maxClients,
+      int callThreads,
+      int queuedCalls,
+      Observer observer,
+      AdmissionPolicy admission,
+      int callbackThreads,
+      int callbackCapacity,
+      ContextPropagation propagation) {
     if (maxClients < 1
         || maxClients > 4096
         || callThreads < 1
         || callThreads > 1024
         || queuedCalls < 1
         || queuedCalls > 100000) throw new IllegalArgumentException("Runtime limits out of bounds");
+    this.propagation =
+        ContextPropagation.combine(CallContexts::capture, Objects.requireNonNull(propagation));
     this.maxClients = maxClients;
     this.observer = Objects.requireNonNull(observer, "observer");
     this.admission = Objects.requireNonNull(admission, "admission");
