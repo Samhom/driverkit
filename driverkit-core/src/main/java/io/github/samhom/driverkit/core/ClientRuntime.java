@@ -28,6 +28,7 @@ public final class ClientRuntime implements AutoCloseable {
   final CompletionDispatcher completions;
   final LifecycleCoordinator lifecycle;
   private boolean closed;
+  private int isolatedThreads;
 
   public ClientRuntime() {
     this(128, 16, 256, Observer.NOOP);
@@ -126,6 +127,43 @@ public final class ClientRuntime implements AutoCloseable {
       thread.setDaemon(true);
       return thread;
     };
+  }
+
+  synchronized ThreadPoolExecutor callExecutor(ClientPolicy policy) {
+    ExecutionPolicy isolation = policy.execution();
+    if (isolation.threads() == 0) return calls;
+    if (closed) throw new ClientException(ClientException.Kind.CLOSED, "Runtime is closed");
+    if (isolatedThreads + isolation.threads() > 1024)
+      throw new ClientException(
+          ClientException.Kind.OVERLOADED, "Runtime isolated-thread budget exhausted");
+    isolatedThreads += isolation.threads();
+    try {
+      ThreadPoolExecutor lane =
+          new ThreadPoolExecutor(
+              isolation.threads(),
+              isolation.threads(),
+              30,
+              TimeUnit.SECONDS,
+              new ArrayBlockingQueue<>(isolation.queuedCalls()),
+              factory("driverkit-resource"),
+              new ThreadPoolExecutor.AbortPolicy()) {
+            @Override
+            protected void terminated() {
+              synchronized (ClientRuntime.this) {
+                isolatedThreads -= isolation.threads();
+              }
+            }
+          };
+      lane.allowCoreThreadTimeOut(true);
+      return lane;
+    } catch (RuntimeException | Error failure) {
+      isolatedThreads -= isolation.threads();
+      throw failure;
+    }
+  }
+
+  public synchronized int isolatedThreadReservations() {
+    return isolatedThreads;
   }
 
   public <C, S> ManagedClient<C, S> register(

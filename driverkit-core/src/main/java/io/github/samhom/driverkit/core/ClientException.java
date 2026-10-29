@@ -15,6 +15,7 @@ public final class ClientException extends RuntimeException {
     NOT_FOUND,
     CONFLICT,
     INVALID_REQUEST,
+    CIRCUIT_OPEN,
     RATE_LIMITED,
     CONNECTION_FAILURE,
     TLS_FAILURE,
@@ -34,6 +35,7 @@ public final class ClientException extends RuntimeException {
     if (kind == Kind.WRITE_OUTCOME_UNKNOWN) return RetryAdvice.RECONCILE_WRITE;
     if (!operation.replaySafe()) return RetryAdvice.DO_NOT_RETRY;
     switch (kind) {
+      case CIRCUIT_OPEN:
       case RATE_LIMITED:
       case OVERLOADED:
       case TIMEOUT:

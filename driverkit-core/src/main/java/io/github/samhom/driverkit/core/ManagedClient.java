@@ -20,6 +20,8 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   private final ClientPolicy policy;
   private final Observer observer;
   private final ResourceId resource;
+  private final java.util.concurrent.ThreadPoolExecutor callExecutor;
+  private final CircuitBreaker circuit;
   private final Object state = new Object();
   private final Object updateLock = new Object();
   private final AtomicReference<ConfigSnapshot<S>> pending = new AtomicReference<>();
@@ -68,10 +70,17 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     this.policy = policy;
     this.observer = observer;
     this.resource = initial.resource();
-    ConfigurationTracker.Attempt attempt = configuration.begin(initial.revision());
-    active = create(initial, attempt);
-    attemptedRevision = initial.revision();
-    configuration.finish(attempt, initial.revision(), null);
+    this.callExecutor = runtime.callExecutor(policy);
+    this.circuit = new CircuitBreaker(policy.execution());
+    try {
+      ConfigurationTracker.Attempt attempt = configuration.begin(initial.revision());
+      active = create(initial, attempt);
+      attemptedRevision = initial.revision();
+      configuration.finish(attempt, initial.revision(), null);
+    } catch (RuntimeException | Error failure) {
+      if (callExecutor != runtime.calls) callExecutor.shutdownNow();
+      throw failure;
+    }
   }
 
   private Generation create(ConfigSnapshot<S> snapshot, ConfigurationTracker.Attempt attempt) {
@@ -128,6 +137,10 @@ public final class ManagedClient<C, S> implements AutoCloseable {
           rejectedUpdates,
           ownedResources);
     }
+  }
+
+  public CircuitStatus circuitStatus() {
+    return circuit.status();
   }
 
   public int cleanupFailures() {
@@ -532,9 +545,11 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     CallContext context = new CallContext(operation.timeout(), runtime.propagation.capture());
     CompletionDispatcher.Reservation completion = null;
     ClientSession<C> lease;
+    CircuitBreaker.Permit permit = null;
     try {
       runtime.admission.check(resource, operation);
       completion = runtime.reserveCompletion();
+      permit = circuit.acquire();
       lease = session();
       try {
         context.limitTo(adapter.operationTimeout(settingsOf(lease), operation));
@@ -543,6 +558,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
         throw failure;
       }
     } catch (RuntimeException rejected) {
+      if (permit != null) permit.abandon();
       if (completion != null) completion.release();
       Observation observation = start(operation, status().revision());
       try {
@@ -553,11 +569,12 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       rejectedResult.completeExceptionally(rejected);
       return rejectedResult;
     } catch (Error failure) {
+      if (permit != null) permit.abandon();
       if (completion != null) completion.release();
       throw failure;
     }
     Invocation<T> invocation =
-        new Invocation<>(operation, call, lease, completion, started, context);
+        new Invocation<>(operation, call, lease, completion, started, context, permit);
     outstanding.put(invocation.result, invocation::abort);
     invocation.submit();
     return invocation.result;
@@ -588,6 +605,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     final long start;
     final CallContext context;
     final Observation observation;
+    final CircuitBreaker.Permit permit;
     final CallFuture<T> result = new CallFuture<>(this::cancel);
     final Object dispatch = new Object();
     final Runnable task = this::run;
@@ -600,7 +618,9 @@ public final class ManagedClient<C, S> implements AutoCloseable {
         ClientSession<C> lease,
         CompletionDispatcher.Reservation completion,
         long start,
-        CallContext context) {
+        CallContext context,
+        CircuitBreaker.Permit permit) {
+      this.permit = permit;
       this.operation = operation;
       this.call = call;
       this.lease = lease;
@@ -618,7 +638,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
 
     void discardQueued() {
       if (!started) {
-        runtime.calls.remove(task);
+        callExecutor.remove(task);
         releasePhysical();
       }
     }
@@ -660,6 +680,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       synchronized (dispatch) {
         if (!select()) return result.isCancelled();
       }
+      permit.abandon();
       long elapsed = System.nanoTime() - start;
       completion.deliver(
           () -> {
@@ -688,6 +709,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
                 "Client shutdown deadline reached");
         selected = select();
       }
+      permit.abandon();
       releasePhysical();
       if (selected) deliver(null, error, Observation.Outcome.ERROR);
     }
@@ -703,6 +725,8 @@ public final class ManagedClient<C, S> implements AutoCloseable {
                 "Operation deadline exceeded");
         if (!select()) return;
       }
+      if (started) permit.complete(error);
+      else permit.abandon();
       deliver(null, error, Observation.Outcome.TIMEOUT);
     }
 
@@ -713,7 +737,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
           deadline =
               runtime.timers.schedule(
                   this::expire, Math.max(1, context.remaining().toNanos()), TimeUnit.NANOSECONDS);
-          runtime.calls.execute(task);
+          callExecutor.execute(task);
         }
       } catch (RejectedExecutionException rejected) {
         finish(
@@ -733,7 +757,11 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       }
       // Native work has finished: release capacity before any user callback is delivered.
       releasePhysical();
-      if (selected) deliver(value, error, outcome);
+      if (selected) {
+        if (started) permit.complete(error);
+        else permit.abandon();
+        deliver(value, error, outcome);
+      }
     }
 
     void run() {
@@ -815,6 +843,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       subscription = null;
     }
     if (binding != null) binding.close(deadline);
+    if (callExecutor != runtime.calls) callExecutor.shutdown();
     CredentialWatch watch = credentials;
     if (watch != null) watch.close(deadline);
   }
@@ -846,6 +875,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       if (retiring != null) scheduleDisposal(retiring);
     }
     for (Runnable abort : outstanding.values()) abort.run();
+    if (callExecutor != runtime.calls) callExecutor.shutdownNow();
   }
 
   @Override
