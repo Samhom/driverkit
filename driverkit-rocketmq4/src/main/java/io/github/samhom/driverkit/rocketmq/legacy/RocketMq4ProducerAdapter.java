@@ -75,4 +75,6 @@ public final class RocketMq4ProducerAdapter
   public java.time.Duration operationTimeout(RocketMqSettings settings, Operation operation) {
     return settings.requestTimeout();
   }
+  @Override public CredentialsProvider credentials(RocketMqSettings settings) { return settings.credentials(); }
+
 }

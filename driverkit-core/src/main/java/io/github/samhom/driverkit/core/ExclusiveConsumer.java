@@ -32,6 +32,8 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
   private C consumer;
   private int active;
   private ConfigurationBinding<S> subscription;
+  private volatile CredentialWatch credentials;
+  private ScheduledThreadPoolExecutor credentialTimers;
   private final LifecycleCoordinator lifecycleWork = new LifecycleCoordinator(8);
   private final AtomicBoolean stopping = new AtomicBoolean();
   private LifecycleCoordinator.Owned<C> ownership;
@@ -40,6 +42,13 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
       new DeliveryGuard() {
         @Override
         public <T> T invoke(Callable<T> handler, T retryResult) {
+          CredentialWatch watch = credentials;
+          if (watch != null)
+            try {
+              watch.check();
+            } catch (ClientException denied) {
+              return retryResult;
+            }
           synchronized (gate) {
             if (stopping.get()
                 || revoked.get()
@@ -259,6 +268,9 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
     synchronized (lifecycle) {
       if (stopping.get() || revoked.get() || state == State.CLOSED || state == State.REVOKED)
         throw new ClientException(ClientException.Kind.CLOSED, "Consumer admission is closed");
+      if (credentials != null && adapter.credentials(next.settings()) != credentials.source)
+        throw new IllegalArgumentException(
+            "Credential source changes require a new resource binding");
       adapter.validate(next.settings());
       adapter.validateUpdate(current.settings(), next.settings());
       adapter.updatePlan(current.settings(), next.settings()).requireAllowed();
@@ -339,6 +351,66 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
     }
   }
 
+  public CredentialStatus credentialStatus() {
+    CredentialWatch watch = credentials;
+    return watch == null ? null : watch.status();
+  }
+
+  public void bindCredentials(CredentialSource source) {
+    Objects.requireNonNull(source);
+    synchronized (lifecycle) {
+      if (stopping.get() || credentials != null)
+        throw new IllegalStateException("Consumer cannot bind credentials");
+      if (adapter.credentials(current.settings()) != source)
+        throw new IllegalArgumentException("Credential source does not match adapter settings");
+      credentialTimers =
+          new ScheduledThreadPoolExecutor(
+              1,
+              task -> {
+                Thread thread = new Thread(task, "driverkit-consumer-credentials");
+                thread.setDaemon(true);
+                return thread;
+              });
+      credentialTimers.setRemoveOnCancelPolicy(true);
+      credentials =
+          new CredentialWatch(
+              source,
+              resource,
+              credentialTimers,
+              updates,
+              lifecycleWork,
+              policy,
+              () -> {
+                synchronized (lifecycle) {
+                  if (stopping.get()) return false;
+                  configurationAttempt = new ConfigurationTracker.Attempt(current.revision());
+                  try {
+                    reloadInternal(current);
+                    return true;
+                  } catch (RuntimeException failure) {
+                    throw failure;
+                  }
+                }
+              },
+              () -> {
+                revoked.set(true);
+                stopping.set(true);
+                state = State.REVOKED;
+              },
+              this::close);
+      try {
+        credentials.start(null);
+      } catch (RuntimeException | Error failure) {
+        revoked.set(true);
+        stopping.set(true);
+        state = State.REVOKED;
+        credentials.close(System.nanoTime() + policy.shutdownTimeout().toNanos());
+        credentialTimers.shutdown();
+        throw failure;
+      }
+    }
+  }
+
   public void bind(ConfigurationSource<S> source) {
     synchronized (lifecycle) {
       if (subscription != null || state != State.RUNNING)
@@ -397,6 +469,9 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
   private void stop(boolean revoke) {
     long deadline = System.nanoTime() + policy.shutdownTimeout().toNanos();
     stopping.set(true);
+    CredentialWatch watch = credentials;
+    if (watch != null) watch.close(deadline);
+    if (credentialTimers != null) credentialTimers.shutdown();
     lifecycleWork.stopInitializing();
     synchronized (lifecycle) {
       if (cleanupRequested) return;

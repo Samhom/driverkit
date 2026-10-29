@@ -37,6 +37,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   private int cleanupFailures;
   private int ownedResources = 1;
   private ConfigurationBinding<S> subscription;
+  private volatile CredentialWatch credentials;
   private boolean bindingInProgress;
   private long closingDeadline = Long.MAX_VALUE;
 
@@ -136,6 +137,8 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   }
 
   public ClientSession<C> session() {
+    CredentialWatch watch = credentials;
+    if (watch != null) watch.check();
     synchronized (state) {
       ensureOpen();
       if (inFlight >= policy.maxInFlight())
@@ -261,6 +264,9 @@ public final class ManagedClient<C, S> implements AutoCloseable {
             || previous.schemaVersion() != snapshot.schemaVersion())
           throw new IllegalArgumentException(
               "Online schema changes require a new resource binding");
+        if (credentials != null && adapter.credentials(snapshot.settings()) != credentials.source)
+          throw new IllegalArgumentException(
+              "Credential source changes require a new resource binding");
         adapter.validate(snapshot.settings());
         adapter.validateUpdate(previous.settings(), snapshot.settings());
         UpdatePlan plan = adapter.updatePlan(previous.settings(), snapshot.settings());
@@ -297,6 +303,79 @@ public final class ManagedClient<C, S> implements AutoCloseable {
           configuration.finish(attempt, active.snapshot.revision(), error);
         }
         throw error;
+      }
+    }
+  }
+
+  public void bindCredentials(CredentialSource source) {
+    Objects.requireNonNull(source);
+    synchronized (updateLock) {
+      synchronized (state) {
+        ensureOpen();
+        if (credentials != null) throw new IllegalStateException("Credentials are already bound");
+      }
+      if (adapter.credentials(active.snapshot.settings()) != source)
+        throw new IllegalArgumentException("Credential source does not match adapter settings");
+      CredentialWatch watch =
+          new CredentialWatch(
+              source,
+              resource,
+              runtime.timers,
+              runtime.maintenance,
+              runtime.lifecycle,
+              policy,
+              this::refreshCredentials,
+              this::revoke,
+              this::close);
+      synchronized (state) {
+        ensureOpen();
+        ownedResources++;
+        credentials = watch;
+      }
+      try {
+        watch.start(this::resourceFinished);
+      } catch (RuntimeException | Error failure) {
+        revoke();
+        watch.close(System.nanoTime() + policy.shutdownTimeout().toNanos());
+        throw failure;
+      }
+    }
+  }
+
+  public CredentialStatus credentialStatus() {
+    CredentialWatch watch = credentials;
+    return watch == null ? null : watch.status();
+  }
+
+  private boolean refreshCredentials() {
+    synchronized (updateLock) {
+      ConfigSnapshot<S> snapshot;
+      ConfigurationTracker.Attempt attempt;
+      synchronized (state) {
+        ensureOpen();
+        if (retiring != null) return false;
+        snapshot = active.snapshot;
+        ownedResources++;
+        attempt = new ConfigurationTracker.Attempt(snapshot.revision());
+      }
+      try {
+        Generation candidate = create(snapshot, attempt);
+        synchronized (state) {
+          if (closed || revoked) {
+            candidate.retired = true;
+            scheduleDisposal(candidate);
+            throw new ClientException(
+                ClientException.Kind.REVOKED, "Credential refresh was revoked");
+          }
+          Generation previous = active;
+          active = candidate;
+          previous.retired = true;
+          retiring = previous;
+          if (previous.references == 0) scheduleDisposal(previous);
+          return true;
+        }
+      } catch (RuntimeException | Error failure) {
+        throw failure;
       }
     }
   }
@@ -736,6 +815,8 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       subscription = null;
     }
     if (binding != null) binding.close(deadline);
+    CredentialWatch watch = credentials;
+    if (watch != null) watch.close(deadline);
   }
 
   void awaitClose(long deadline) {

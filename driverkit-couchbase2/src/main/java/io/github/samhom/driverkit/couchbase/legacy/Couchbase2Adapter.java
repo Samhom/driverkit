@@ -74,4 +74,6 @@ public final class Couchbase2Adapter implements DriverAdapter<Couchbase2Client, 
   public java.time.Duration operationTimeout(CouchbaseSettings settings, Operation operation) {
     return settings.operationTimeout();
   }
+  @Override public CredentialsProvider credentials(CouchbaseSettings settings) { return settings.credentials(); }
+
 }

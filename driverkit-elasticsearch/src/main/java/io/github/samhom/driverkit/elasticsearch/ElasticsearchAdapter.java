@@ -143,4 +143,6 @@ public final class ElasticsearchAdapter
   public java.time.Duration operationTimeout(ElasticsearchSettings settings, Operation operation) {
     return settings.readTimeout();
   }
+  @Override public CredentialsProvider credentials(ElasticsearchSettings settings) { return settings.credentials(); }
+
 }

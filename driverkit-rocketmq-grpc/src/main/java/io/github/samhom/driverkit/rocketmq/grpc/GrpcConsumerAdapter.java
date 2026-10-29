@@ -97,4 +97,6 @@ public final class GrpcConsumerAdapter
         .field("maxCachedBytes", a.maxCachedBytes(), b.maxCachedBytes(), UpdatePlan.Effect.REBUILD)
         .build();
   }
+  @Override public CredentialsProvider credentials(GrpcConsumerSettings settings) { return settings.client().credentials(); }
+
 }

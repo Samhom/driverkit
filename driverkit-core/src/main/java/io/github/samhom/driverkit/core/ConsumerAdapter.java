@@ -8,6 +8,10 @@ public interface ConsumerAdapter<C, S> {
 
   default void validateUpdate(S previous, S next) {}
 
+  default CredentialsProvider credentials(S settings) {
+    return null;
+  }
+
   default UpdatePlan updatePlan(S previous, S next) {
     return UpdatePlan.rebuild();
   }

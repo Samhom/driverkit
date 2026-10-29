@@ -136,3 +136,11 @@ Couchbase 代际发布前还须确认配置中的目标 Bucket 已就绪。setti
 客户端及独占消费者暴露 `configurationStatus()` 和最近 64 条 `configurationHistory()`。记录 desired/attempted/effective revision、校验/创建/预热/排空/发布阶段、失败阶段、固定失败类别和单调时钟耗时；不保存配置值、秘密、Throwable 或异常文本。初始化/预热过程中可读取状态，失败保留旧生效版本。校验失败也消耗 attempted revision，修复或回滚必须使用更高 revision；BUSY 不消耗版本，手动调用者需重试，绑定的配置源会合并等待。历史为本进程有界诊断记录，持久审计及发布操作者身份由可信控制平台负责。
 
 `reload(snapshot, expectedRevision)` 在同一发布锁内比较生效版本，避免并发发布覆盖；错误不会覆盖现有代际。`ConfigurationRelease` 携带单调快照、期望版本、发布分组和 0–100 百分比，以 SHA-256 稳定选取实例，扩大同组百分比保留已有灰度对象。`apply(release, instanceId)` 未命中返回 NOT_TARGETED；PushConfigurationSource 亦提供带 release 的 CAS 发布入口。instanceId 来自受信任服务配置，灰度不是认证或跨资源授权机制，配置源仍应在可信平台完成审批与权限校验。Apollo 继续使用单文档及统一 revision，不静默覆盖失败状态。
+
+## 凭据生命周期
+
+内置适配器暴露凭据能力引用，客户端或独占消费者通过 `bindCredentials(CredentialSource)` 绑定同一个来源。RotatingCredentialsProvider 保存解析器引用及 version/refreshAt/expiresAt 元数据，不缓存密码材料；refresh 回调由可信密钥平台集成提供。解析跨越轮换或撤销时拒绝结果并清理凭据。
+
+绑定后先重新解析并建立受监控代际；轮换不改变配置 revision。新代际未就绪时拒绝新调用，现有租约保持原所有权；消费者先排空并关闭旧成员再启动替代。提前刷新在受限生命周期工作中执行，每版本调用一次刷新回调；重建失败最多尝试三次，等待旧代际关闭只保留一个重试计时器。过期/撤销即关闭接纳，与阻塞的刷新任务独立；无法撤销已经发生的服务端效果，旧 native 字符串副本由原生驱动关闭回收。
+
+订阅和取消订阅均由现有生命周期所有权管理，关闭句柄一并取消计时器并释放订阅，无法在线解绑凭据监控。绑定后换凭据来源须新建资源；事件只含版本和时间，不含秘密。credentialStatus 提供 desired/active credential version、到期时间及固定失败类别。
