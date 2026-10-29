@@ -125,4 +125,14 @@ public final class JedisAdapter implements DriverAdapter<RedisClient, RedisSetti
   public AdapterCapabilities capabilities() {
     return AdapterCapabilities.nativeApi(false);
   }
+
+  @Override
+  public UpdatePlan updatePlan(RedisSettings previous, RedisSettings next) {
+    return io.github.samhom.driverkit.settings.SettingsUpdates.plan(previous, next);
+  }
+
+  @Override
+  public java.time.Duration operationTimeout(RedisSettings settings, Operation operation) {
+    return settings.readTimeout();
+  }
 }

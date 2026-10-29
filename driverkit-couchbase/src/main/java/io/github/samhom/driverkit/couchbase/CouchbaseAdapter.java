@@ -104,4 +104,14 @@ public final class CouchbaseAdapter implements DriverAdapter<Cluster, CouchbaseS
   public AdapterCapabilities capabilities() {
     return AdapterCapabilities.nativeApi(true);
   }
+
+  @Override
+  public UpdatePlan updatePlan(CouchbaseSettings previous, CouchbaseSettings next) {
+    return io.github.samhom.driverkit.settings.SettingsUpdates.plan(previous, next);
+  }
+
+  @Override
+  public java.time.Duration operationTimeout(CouchbaseSettings settings, Operation operation) {
+    return settings.operationTimeout();
+  }
 }

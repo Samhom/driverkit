@@ -91,4 +91,21 @@ public final class GrpcProducerAdapter implements DriverAdapter<Producer, GrpcSe
   public AdapterCapabilities capabilities() {
     return AdapterCapabilities.nativeApi(true);
   }
+
+  @Override
+  public UpdatePlan updatePlan(GrpcSettings a, GrpcSettings b) {
+    return UpdatePlan.builder()
+        .field("proxy", a.proxy(), b.proxy(), UpdatePlan.Effect.REBUILD)
+        .field("credentials", a.credentials(), b.credentials(), UpdatePlan.Effect.REBUILD)
+        .field("topic", a.topic(), b.topic(), UpdatePlan.Effect.FORBIDDEN)
+        .field("requestTimeout", a.requestTimeout(), b.requestTimeout(), UpdatePlan.Effect.REBUILD)
+        .field(
+            "maxMessageBytes", a.maxMessageBytes(), b.maxMessageBytes(), UpdatePlan.Effect.REBUILD)
+        .build();
+  }
+
+  @Override
+  public java.time.Duration operationTimeout(GrpcSettings settings, Operation operation) {
+    return settings.requestTimeout();
+  }
 }

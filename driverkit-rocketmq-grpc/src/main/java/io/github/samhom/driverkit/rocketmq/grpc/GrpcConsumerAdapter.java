@@ -66,4 +66,35 @@ public final class GrpcConsumerAdapter
   public void close(PushConsumer consumer) throws Exception {
     consumer.close();
   }
+
+  @Override
+  public UpdatePlan updatePlan(GrpcConsumerSettings a, GrpcConsumerSettings b) {
+    return UpdatePlan.builder()
+        .field("proxy", a.client().proxy(), b.client().proxy(), UpdatePlan.Effect.REBUILD)
+        .field(
+            "credentials",
+            a.client().credentials(),
+            b.client().credentials(),
+            UpdatePlan.Effect.REBUILD)
+        .field("topic", a.client().topic(), b.client().topic(), UpdatePlan.Effect.FORBIDDEN)
+        .field(
+            "requestTimeout",
+            a.client().requestTimeout(),
+            b.client().requestTimeout(),
+            UpdatePlan.Effect.REBUILD)
+        .field(
+            "maxMessageBytes",
+            a.client().maxMessageBytes(),
+            b.client().maxMessageBytes(),
+            UpdatePlan.Effect.REBUILD)
+        .field("group", a.group(), b.group(), UpdatePlan.Effect.FORBIDDEN)
+        .field("threads", a.threads(), b.threads(), UpdatePlan.Effect.REBUILD)
+        .field(
+            "maxCachedMessages",
+            a.maxCachedMessages(),
+            b.maxCachedMessages(),
+            UpdatePlan.Effect.REBUILD)
+        .field("maxCachedBytes", a.maxCachedBytes(), b.maxCachedBytes(), UpdatePlan.Effect.REBUILD)
+        .build();
+  }
 }

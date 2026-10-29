@@ -133,4 +133,14 @@ public final class ElasticsearchAdapter
   public AdapterCapabilities capabilities() {
     return AdapterCapabilities.nativeApi(true);
   }
+
+  @Override
+  public UpdatePlan updatePlan(ElasticsearchSettings previous, ElasticsearchSettings next) {
+    return io.github.samhom.driverkit.settings.SettingsUpdates.plan(previous, next);
+  }
+
+  @Override
+  public java.time.Duration operationTimeout(ElasticsearchSettings settings, Operation operation) {
+    return settings.readTimeout();
+  }
 }

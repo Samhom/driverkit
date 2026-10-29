@@ -96,4 +96,14 @@ public final class Elasticsearch7Adapter
           operation);
     return FailureClassifier.transport(error, operation);
   }
+
+  @Override
+  public UpdatePlan updatePlan(ElasticsearchSettings previous, ElasticsearchSettings next) {
+    return io.github.samhom.driverkit.settings.SettingsUpdates.plan(previous, next);
+  }
+
+  @Override
+  public java.time.Duration operationTimeout(ElasticsearchSettings settings, Operation operation) {
+    return settings.readTimeout();
+  }
 }

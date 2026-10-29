@@ -40,7 +40,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   private long closingDeadline = Long.MAX_VALUE;
 
   private final class Generation {
-    final ConfigSnapshot<S> snapshot;
+    ConfigSnapshot<S> snapshot;
     final C client;
     final LifecycleCoordinator.Owned<C> ownership;
     int references;
@@ -193,6 +193,19 @@ public final class ManagedClient<C, S> implements AutoCloseable {
         });
   }
 
+  public UpdatePlan planUpdate(ConfigSnapshot<S> snapshot) {
+    Objects.requireNonNull(snapshot);
+    if (!resource.equals(snapshot.resource()))
+      throw new IllegalArgumentException("Configuration resource scope mismatch");
+    S previous;
+    synchronized (state) {
+      ensureOpen();
+      previous = active.snapshot.settings();
+    }
+    adapter.validate(snapshot.settings());
+    return adapter.updatePlan(previous, snapshot.settings());
+  }
+
   public UpdateResult reload(ConfigSnapshot<S> snapshot) {
     Objects.requireNonNull(snapshot, "snapshot");
     if (!resource.equals(snapshot.resource()))
@@ -206,10 +219,21 @@ public final class ManagedClient<C, S> implements AutoCloseable {
         previousSettings = active.snapshot.settings();
       }
       // Validation is adapter code; it must not block close() or registry retirement's state lock.
+      adapter.validate(snapshot.settings());
       adapter.validateUpdate(previousSettings, snapshot.settings());
+      UpdatePlan plan = adapter.updatePlan(previousSettings, snapshot.settings());
+      plan.requireAllowed();
       synchronized (state) {
         ensureOpen();
+        if (!active.snapshot.schemaId().equals(snapshot.schemaId())
+            || active.snapshot.schemaVersion() != snapshot.schemaVersion())
+          throw new IllegalArgumentException(
+              "Online schema changes require a new resource binding");
         attemptedRevision = snapshot.revision();
+        if (plan.effect() == UpdatePlan.Effect.LIVE) {
+          active.snapshot = snapshot;
+          return UpdateResult.APPLIED;
+        }
         ownedResources++;
       }
       Generation candidate;
@@ -377,6 +401,11 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     }
   }
 
+  @SuppressWarnings("unchecked")
+  private S settingsOf(ClientSession<C> lease) {
+    return (S) lease.settings(Object.class);
+  }
+
   public <T> CompletableFuture<T> executeAsync(Operation operation, AsyncCall<C, T> call) {
     Objects.requireNonNull(operation, "operation");
     Objects.requireNonNull(call, "call");
@@ -388,6 +417,12 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       runtime.admission.check(resource, operation);
       completion = runtime.reserveCompletion();
       lease = session();
+      try {
+        context.limitTo(adapter.operationTimeout(settingsOf(lease), operation));
+      } catch (RuntimeException | Error failure) {
+        lease.close();
+        throw failure;
+      }
     } catch (RuntimeException rejected) {
       if (completion != null) completion.release();
       Observation observation = start(operation, status().revision());
@@ -398,6 +433,9 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       CompletableFuture<T> rejectedResult = new CompletableFuture<>();
       rejectedResult.completeExceptionally(rejected);
       return rejectedResult;
+    } catch (Error failure) {
+      if (completion != null) completion.release();
+      throw failure;
     }
     Invocation<T> invocation =
         new Invocation<>(operation, call, lease, completion, started, context);

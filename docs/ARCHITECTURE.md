@@ -116,3 +116,17 @@ Redis 使用原生 ACL 异常和标准协议错误前缀，连接原因区分连
 SDK 核心不自动重放。Redis 单节点不加应用重试；ES 同时关闭 HTTP 和 Java Client 重试；Remoting 发送重试为 0，gRPC maxAttempts=1。Couchbase 受管 KV 门面通过公开 RetryStrategy 返回 noRetry，避免普通暂时故障重放；原生 mandatory/alwaysRetry 路由恢复仍可能发生，受剩余预算限制。原生会话和旧版 Couchbase 保留厂商默认语义，应用应检查原生配置，避免再叠加无界 retry/retryWhen。参考 [Couchbase 官方错误与重试说明](https://docs.couchbase.com/java-sdk/current/howtos/error-handling.html)。
 
 Couchbase 代际发布前还须确认配置中的目标 Bucket 已就绪。settings-aware `DriverAdapter.warmup(client, settings, remaining)` 默认兼容旧 warmup，实现可在同一初始化截止内验证实际资源；Couchbase 先等待 Cluster，再扣除已消耗时间等待 Bucket 的 KV 服务（受管门面不依赖 Views/Query；原生会话使用其他服务时须自行检查），避免 noRetry 下首请求遇到 BUCKET_OPEN_IN_PROGRESS。该行为由真实服务门面场景覆盖。
+
+## 配置字段生效规则
+
+`planUpdate(snapshot)` 返回不含字段值的变更预览。LIVE 只在新租约上立即生效，不重建原生实例；已接纳请求及原生会话保留自己的旧快照。REBUILD 完成新实例预热后切换，FORBIDDEN 拒绝在线切换资源身份。Schema ID/版本不能在线更换。对字段完全相同的新 revision，保留显式重建语义，支持外部状态或凭据重新解析。
+
+| 产品 | LIVE | REBUILD | FORBIDDEN |
+|---|---|---|---|
+| Redis 3/8 | maxValueBytes | endpoint、credentials、connect/readTimeout、maxConnections | database |
+| ES 7/9 | maxBatchItems、maxDocumentBytes | endpoint、credentials、connect/readTimeout、maxConnections | 无 |
+| Couchbase 2/3 | maxDocumentBytes | endpoint、credentials、connect/operationTimeout | bucket、scope、collection |
+| RocketMQ 4/5 | 无 | nameServer、credentials、requestTimeout、consumerThreads、maxMessageBytes | group、topic |
+| gRPC 实验模块 | 无 | proxy、credentials、requestTimeout、maxMessageBytes | topic |
+
+门面构造器中的超时、批量及字节参数始终是实例级硬上限，在线配置不能突破它们；降低当前配置会收紧后续调用。核心在计时、排队和原生调用前取 Operation 超时与当前代际 operationTimeout 的较小值，包含排队时间。原生会话自定义操作仍须自行应用预算。消费者通过排空与重启实施配置变更，不声称消费参数可热修改。FactoryAdapter 默认保守重建；自定义 DriverAdapter 可显式覆盖 updatePlan。

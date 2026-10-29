@@ -95,4 +95,14 @@ public final class Jedis3Adapter implements DriverAdapter<JedisPool, RedisSettin
       return FailureClassifier.uncertain(operation, ClientException.Kind.UNAVAILABLE);
     return ClientException.Kind.DRIVER_FAILURE;
   }
+
+  @Override
+  public UpdatePlan updatePlan(RedisSettings previous, RedisSettings next) {
+    return io.github.samhom.driverkit.settings.SettingsUpdates.plan(previous, next);
+  }
+
+  @Override
+  public java.time.Duration operationTimeout(RedisSettings settings, Operation operation) {
+    return settings.readTimeout();
+  }
 }

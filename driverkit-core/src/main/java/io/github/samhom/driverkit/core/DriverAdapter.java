@@ -10,6 +10,15 @@ public interface DriverAdapter<C, S> {
 
   default void validateUpdate(S previous, S next) {}
 
+  default UpdatePlan updatePlan(S previous, S next) {
+    return UpdatePlan.rebuild();
+  }
+
+  /** Native per-generation ceiling; the core also retains the caller's operation ceiling. */
+  default Duration operationTimeout(S settings, Operation operation) {
+    return operation.timeout();
+  }
+
   C create(S settings) throws Exception;
 
   /** Remaining initialization budget, including time already spent waiting for lifecycle work. */

@@ -65,4 +65,14 @@ public final class RocketMq4ProducerAdapter
   public ClientException.Kind classify(Throwable error, Operation operation) {
     return RemotingFailures.classify(error, operation);
   }
+
+  @Override
+  public UpdatePlan updatePlan(RocketMqSettings previous, RocketMqSettings next) {
+    return io.github.samhom.driverkit.settings.SettingsUpdates.plan(previous, next);
+  }
+
+  @Override
+  public java.time.Duration operationTimeout(RocketMqSettings settings, Operation operation) {
+    return settings.requestTimeout();
+  }
 }

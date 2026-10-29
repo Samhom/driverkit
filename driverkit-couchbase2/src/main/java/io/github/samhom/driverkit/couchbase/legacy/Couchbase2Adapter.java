@@ -64,4 +64,14 @@ public final class Couchbase2Adapter implements DriverAdapter<Couchbase2Client, 
       return ClientException.Kind.SERVER_REJECTED;
     return FailureClassifier.transport(error, operation);
   }
+
+  @Override
+  public UpdatePlan updatePlan(CouchbaseSettings previous, CouchbaseSettings next) {
+    return io.github.samhom.driverkit.settings.SettingsUpdates.plan(previous, next);
+  }
+
+  @Override
+  public java.time.Duration operationTimeout(CouchbaseSettings settings, Operation operation) {
+    return settings.operationTimeout();
+  }
 }

@@ -4,7 +4,8 @@ import java.time.Duration;
 
 /** A single deadline is shared with the adapter and all native attempts. */
 public final class CallContext {
-  private final long deadline;
+  private long deadline;
+  private final long started;
   private Object settings;
   private final ContextPropagation.Snapshot snapshot;
 
@@ -14,7 +15,15 @@ public final class CallContext {
 
   CallContext(Duration timeout, ContextPropagation.Snapshot snapshot) {
     this.snapshot = java.util.Objects.requireNonNull(snapshot);
-    deadline = System.nanoTime() + timeout.toNanos();
+    started = System.nanoTime();
+    deadline = started + timeout.toNanos();
+  }
+
+  void limitTo(Duration timeout) {
+    java.util.Objects.requireNonNull(timeout);
+    if (timeout.isNegative() || timeout.isZero() || timeout.compareTo(Duration.ofMinutes(10)) > 0)
+      throw new IllegalArgumentException("Invalid operation ceiling");
+    deadline = Math.min(deadline, started + timeout.toNanos());
   }
 
   public ContextPropagation.Scope openScope() {

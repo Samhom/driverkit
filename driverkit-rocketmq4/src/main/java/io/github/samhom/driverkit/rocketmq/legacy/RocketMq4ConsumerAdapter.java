@@ -95,4 +95,9 @@ public final class RocketMq4ConsumerAdapter
   public void close(DefaultMQPushConsumer consumer) {
     consumer.shutdown();
   }
+
+  @Override
+  public UpdatePlan updatePlan(RocketMqSettings previous, RocketMqSettings next) {
+    return io.github.samhom.driverkit.settings.SettingsUpdates.plan(previous, next);
+  }
 }

@@ -8,6 +8,10 @@ public interface ConsumerAdapter<C, S> {
 
   default void validateUpdate(S previous, S next) {}
 
+  default UpdatePlan updatePlan(S previous, S next) {
+    return UpdatePlan.rebuild();
+  }
+
   C start(S settings, DeliveryGuard guard) throws Exception;
 
   default C start(S settings, DeliveryGuard guard, java.time.Duration remaining) throws Exception {

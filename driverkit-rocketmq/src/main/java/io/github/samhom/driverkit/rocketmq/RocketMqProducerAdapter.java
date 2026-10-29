@@ -63,4 +63,14 @@ public final class RocketMqProducerAdapter
   public AdapterCapabilities capabilities() {
     return AdapterCapabilities.nativeApi(true);
   }
+
+  @Override
+  public UpdatePlan updatePlan(RocketMqSettings previous, RocketMqSettings next) {
+    return io.github.samhom.driverkit.settings.SettingsUpdates.plan(previous, next);
+  }
+
+  @Override
+  public java.time.Duration operationTimeout(RocketMqSettings settings, Operation operation) {
+    return settings.requestTimeout();
+  }
 }

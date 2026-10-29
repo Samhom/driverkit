@@ -95,4 +95,9 @@ public final class RocketMqConsumerAdapter
         configured <= 0 ? budget : Math.min(configured, budget));
     consumer.shutdown();
   }
+
+  @Override
+  public UpdatePlan updatePlan(RocketMqSettings previous, RocketMqSettings next) {
+    return io.github.samhom.driverkit.settings.SettingsUpdates.plan(previous, next);
+  }
 }

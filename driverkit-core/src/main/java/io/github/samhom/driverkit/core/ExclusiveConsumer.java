@@ -207,6 +207,10 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
       if (next.revision() <= attempted) return UpdateResult.STALE;
       adapter.validate(next.settings());
       adapter.validateUpdate(current.settings(), next.settings());
+      adapter.updatePlan(current.settings(), next.settings()).requireAllowed();
+      if (!current.schemaId().equals(next.schemaId())
+          || current.schemaVersion() != next.schemaVersion())
+        throw new IllegalArgumentException("Online schema changes require a new resource binding");
       attempted = next.revision();
       if (state != State.RUNNING)
         throw new ClientException(
