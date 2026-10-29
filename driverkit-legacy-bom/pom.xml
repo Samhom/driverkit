@@ -10,6 +10,7 @@
   <packaging>pom</packaging>
   <dependencyManagement>
     <dependencies>
+      <dependency><groupId>com.google.guava</groupId><artifactId>guava</artifactId><version>${guava.version}</version></dependency>
       <dependency>
         <groupId>com.alibaba</groupId>
         <artifactId>fastjson</artifactId>

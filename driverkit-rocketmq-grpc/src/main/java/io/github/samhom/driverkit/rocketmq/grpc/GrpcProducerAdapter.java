@@ -108,6 +108,9 @@ public final class GrpcProducerAdapter implements DriverAdapter<Producer, GrpcSe
   public java.time.Duration operationTimeout(GrpcSettings settings, Operation operation) {
     return settings.requestTimeout();
   }
-  @Override public CredentialsProvider credentials(GrpcSettings settings) { return settings.credentials(); }
 
+  @Override
+  public CredentialsProvider credentials(GrpcSettings settings) {
+    return settings.credentials();
+  }
 }

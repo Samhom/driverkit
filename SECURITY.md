@@ -59,3 +59,7 @@ ES 7.17 的支持已于 [2026-01-15 结束](https://www.elastic.co/support/eol)�
 配置中心服务端授权、资源目录来源、凭据轮换/撤销、内网出口策略、真实 TLS、服务端资源权限、实际消息幂等与集群级并发语义需要在目标环境复核。此仓库没有引入或验证任何特定企业的内部权限实现。
 
 发现漏洞时请使用 GitHub 的私密漏洞报告功能（仓库启用后）或先联系维护者，不要把凭据或业务数据放入公开 Issue。
+
+Guava is managed at 33.7.2-jre in the build and published BOMs. The October 27 advisory update GHSA-xxph-c9ww-hj94 / CVE-2026-102554 covers earlier native-deserialization implementations; the SDK does not expose Java object deserialization, and retains the dependency audit rather than suppressing this finding. Reference: https://github.com/advisories/GHSA-xxph-c9ww-hj94
+
+Couchbase core-io 3.13.0 embeds vulnerable Guava 33.4.0. driverkit-couchbase-core pins the official core binary and replaces the embedded relocated component with official Guava 33.7.2-jre via Maven Shade. The adapter excludes the original core-io JAR; applications must not reintroduce duplicate core classes. The audit inspects built SDK JAR metadata as well as external dependencies, so embedded components in rebuilds remain checked. Native API version remains 3.13.0; OSGi bundle deployment is not supported by this rebuild.

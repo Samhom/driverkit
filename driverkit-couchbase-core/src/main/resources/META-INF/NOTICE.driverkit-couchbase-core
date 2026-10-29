@@ -1,0 +1,4 @@
+This artifact contains Couchbase core-io 3.13.0 and Google Guava 33.7.2-jre, under Apache License 2.0.
+Upstream metadata and licenses are preserved in META-INF.
+Modification: replace Couchbase's relocated Guava classes and metadata with relocated upstream Guava 33.7.2-jre and its failureaccess dependency.
+This is a DriverKit rebuild, not an official Couchbase release. SHA-256 pins are in pom.xml.

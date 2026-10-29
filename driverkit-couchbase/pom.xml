@@ -18,6 +18,8 @@
       <groupId>com.couchbase.client</groupId>
       <artifactId>java-client</artifactId>
       <version>${couchbase.version}</version>
+      <exclusions><exclusion><groupId>com.couchbase.client</groupId><artifactId>core-io</artifactId></exclusion></exclusions>
     </dependency>
+    <dependency><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-couchbase-core</artifactId><version>${project.version}</version></dependency>
   </dependencies>
 </project>

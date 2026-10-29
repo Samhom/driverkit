@@ -53,6 +53,41 @@ class CredentialLifecycleTest {
   }
 
   @Test
+  void sameVersionRevocationFromACustomSourceStillClosesAdmission() throws Exception {
+    AtomicReference<java.util.function.Consumer<CredentialState>> callback =
+        new AtomicReference<>();
+    CredentialSource source =
+        new CredentialSource() {
+          public CredentialState state() {
+            return CredentialLifecycleTest.state(1);
+          }
+
+          public Credentials resolve() {
+            return resolver("one").resolve();
+          }
+
+          public AutoCloseable subscribe(java.util.function.Consumer<CredentialState> listener) {
+            callback.set(listener);
+            listener.accept(state());
+            return () -> callback.set(null);
+          }
+        };
+    try (ClientRuntime runtime = new ClientRuntime()) {
+      ManagedClient<String, Settings> handle =
+          runtime.register(
+              new ConfigSnapshot<>(ID, 1, new Settings(source)),
+              new Adapter(),
+              ClientPolicy.defaults());
+      handle.bindCredentials(source);
+      await(() -> handle.credentialStatus().state() == CredentialStatus.State.ACTIVE);
+      CredentialState old = source.state();
+      callback.get().accept(new CredentialState(1, old.refreshAt(), old.expiresAt(), true));
+      assertTrue(handle.status().revoked());
+      assertThrows(ClientException.class, handle::session);
+    }
+  }
+
+  @Test
   void rotatesWithoutStealingConfigurationRevisionsAndRevokesAdmission() throws Exception {
     RotatingCredentialsProvider source =
         new RotatingCredentialsProvider(resolver("one"), state(1), () -> {});

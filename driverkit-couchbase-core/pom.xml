@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>io.github.samhom.driverkit</groupId><artifactId>driverkit-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+  <artifactId>driverkit-couchbase-core</artifactId>
+  <description>Pinned Couchbase core-io rebuild replacing its embedded Guava with the patched upstream release.</description>
+  <dependencies>
+    <dependency><groupId>com.google.guava</groupId><artifactId>guava</artifactId><version>33.7.2-jre</version><optional>true</optional></dependency>
+    <dependency><groupId>org.jspecify</groupId><artifactId>jspecify</artifactId><version>1.0.0</version></dependency>
+    <dependency><groupId>io.projectreactor</groupId><artifactId>reactor-core</artifactId><version>${reactor.version}</version></dependency>
+    <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId></dependency>
+  </dependencies>
+  <build><plugins>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><version>3.8.1</version><executions><execution>
+      <id>pinned-inputs</id><phase>generate-sources</phase><goals><goal>copy</goal></goals><configuration><artifactItems>
+        <artifactItem><groupId>com.couchbase.client</groupId><artifactId>core-io</artifactId><version>3.13.0</version><type>jar</type><outputDirectory>${project.build.directory}/upstream</outputDirectory></artifactItem>
+        <artifactItem><groupId>com.google.guava</groupId><artifactId>guava</artifactId><version>33.7.2-jre</version><type>jar</type><outputDirectory>${project.build.directory}/upstream</outputDirectory></artifactItem>
+      </artifactItems></configuration>
+    </execution></executions></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><version>3.2.0</version><executions><execution>
+      <id>replace-embedded-guava</id><phase>generate-sources</phase><goals><goal>run</goal></goals><configuration><target>
+        <checksum file="${project.build.directory}/upstream/core-io-3.13.0.jar" algorithm="SHA-256" property="core.sha"/>
+        <checksum file="${project.build.directory}/upstream/guava-33.7.2-jre.jar" algorithm="SHA-256" property="guava.sha"/>
+        <fail message="Pinned inputs changed: review embedded Guava replacement"><condition><not><and>
+          <equals arg1="${core.sha}" arg2="63fbc613326ff6ae4e178316f2f3b064e45cae8d40393d6c7cc6ea69520452de"/>
+          <equals arg1="${guava.sha}" arg2="b530942257fb935f8b2cfaa5f8eb5bd59c555fd8e8d01b8ce98912e077ea606c"/>
+        </and></not></condition></fail>
+        <unzip src="${project.build.directory}/upstream/core-io-3.13.0.jar" dest="${project.build.outputDirectory}"><patternset>
+          <exclude name="com/couchbase/client/core/deps/com/google/common/**"/>
+          <exclude name="com/couchbase/client/core/deps/com/google/thirdparty/**"/>
+          <exclude name="META-INF/maven/com.google.guava/**"/>
+          <exclude name="META-INF/MANIFEST.MF"/>
+        </patternset></unzip>
+      </target></configuration>
+    </execution></executions></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.6.1</version><executions><execution>
+      <phase>package</phase><goals><goal>shade</goal></goals><configuration>
+        <createDependencyReducedPom>false</createDependencyReducedPom>
+        <artifactSet><includes><include>com.google.guava:*</include></includes></artifactSet>
+        <relocations>
+          <relocation><pattern>com.google.common</pattern><shadedPattern>com.couchbase.client.core.deps.com.google.common</shadedPattern></relocation>
+          <relocation><pattern>com.google.thirdparty</pattern><shadedPattern>com.couchbase.client.core.deps.com.google.thirdparty</shadedPattern></relocation>
+        </relocations>
+        <filters><filter><artifact>*:*</artifact><excludes><exclude>META-INF/*.SF</exclude><exclude>META-INF/*.RSA</exclude><exclude>META-INF/*.DSA</exclude><exclude>module-info.class</exclude><exclude>META-INF/versions/**/module-info.class</exclude></excludes></filter></filters>
+        <transformers><transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer"><manifestEntries><Multi-Release>true</Multi-Release></manifestEntries></transformer></transformers>
+      </configuration>
+    </execution></executions></plugin>
+  </plugins></build>
+</project>

@@ -135,6 +135,9 @@ public final class JedisAdapter implements DriverAdapter<RedisClient, RedisSetti
   public java.time.Duration operationTimeout(RedisSettings settings, Operation operation) {
     return settings.readTimeout();
   }
-  @Override public CredentialsProvider credentials(RedisSettings settings) { return settings.credentials(); }
 
+  @Override
+  public CredentialsProvider credentials(RedisSettings settings) {
+    return settings.credentials();
+  }
 }

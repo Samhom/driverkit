@@ -72,3 +72,5 @@ SDK 的并发上限和 deadline 不能替代服务端事务、唯一约束、消
 三参数 ConfigSnapshot 只接受 SDK 明确支持的不可变值，或显式实现 ImmutableSettings 的配置类型；不能仅因类型是 record 就假设其成员不可变。自定义可变 DTO 使用四参数构造器，传入 SettingsSchema.copying(id, schemaVersion, type, deepCopy, validator)。构造、读取及 withRevision 都执行复制与校验，外部修改不影响已发布快照。拷贝函数必须递归复制数组、集合和可变成员，并可并发调用；SDK 不采用反射或反序列化猜测复制规则。
 
 内置 Redis/ES/Couchbase/RocketMQ/gRPC 配置显式实现不可变契约并沿用构造器字段约束。CredentialsProvider 是受信任的外部能力引用，允许轮换，不属于被快照复制的秘密材料。Schema 版本与单调发布 revision 独立；Schema 升级和有损转换由配置解码端显式处理。
+
+Couchbase 3 的适配器现依赖 driverkit-couchbase-core：保持原生 core-io 3.13.0 API，并替换其内嵌 Guava。使用 package/verify 构建后使用发布 JAR；不要另外引入原始 core-io 或重复的同名类。此重建不支持 OSGi bundle 部署。输入哈希、组件替换方式及审查范围见 SECURITY.md。

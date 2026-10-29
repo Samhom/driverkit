@@ -114,6 +114,9 @@ public final class CouchbaseAdapter implements DriverAdapter<Cluster, CouchbaseS
   public java.time.Duration operationTimeout(CouchbaseSettings settings, Operation operation) {
     return settings.operationTimeout();
   }
-  @Override public CredentialsProvider credentials(CouchbaseSettings settings) { return settings.credentials(); }
 
+  @Override
+  public CredentialsProvider credentials(CouchbaseSettings settings) {
+    return settings.credentials();
+  }
 }

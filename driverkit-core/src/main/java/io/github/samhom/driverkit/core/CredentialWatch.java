@@ -67,7 +67,11 @@ final class CredentialWatch {
   }
 
   private synchronized void receive(CredentialState next) {
-    if (closed || terminal || (state != null && next.version() <= state.version())) return;
+    if (closed
+        || terminal
+        || (state != null
+            && (next.version() < state.version()
+                || (next.version() == state.version() && !next.revoked())))) return;
     state = next;
     Duration lifetime = Duration.between(Instant.now(), next.expiresAt());
     expiryDeadline =

@@ -40,6 +40,13 @@ def coordinates(root: Path, repository: Path, experimental: bool, legacy: bool =
             if node.get("type", "jar") == "jar":
                 classifier = "-" + node["classifier"] if node.get("classifier") else ""
                 jars.add(repository / group.replace(".", "/") / artifact / version / (artifact + "-" + version + classifier + ".jar"))
+        if group and group.startswith("io.github.samhom.driverkit") and node.get("type", "jar") == "jar":
+            built = root / artifact / "target" / (artifact + "-" + version + ".jar")
+            if not built.resolve().is_relative_to(root):
+                raise ValueError("SDK artifact must stay inside the workspace")
+            if not built.is_file():
+                raise ValueError("Package SDK artifacts before auditing: " + artifact)
+            jars.add(built)
         for child in node.get("children", []):
             visit(child)
 
@@ -65,7 +72,7 @@ def coordinates(root: Path, repository: Path, experimental: bool, legacy: bool =
                 if entry.file_size > 65536:
                     raise ValueError("Embedded metadata is oversized")
                 props = dict(line.split("=", 1) for line in archive.read(entry).decode("utf-8", errors="strict").splitlines() if "=" in line and not line.startswith("#"))
-                if all(key in props for key in ("groupId", "artifactId", "version")):
+                if all(key in props for key in ("groupId", "artifactId", "version")) and not props["groupId"].startswith("io.github.samhom.driverkit"):
                     coordinate = (props["groupId"] + ":" + props["artifactId"], props["version"])
                     if coordinate not in found:
                         embedded += 1

@@ -100,6 +100,9 @@ public final class RocketMq4ConsumerAdapter
   public UpdatePlan updatePlan(RocketMqSettings previous, RocketMqSettings next) {
     return io.github.samhom.driverkit.settings.SettingsUpdates.plan(previous, next);
   }
-  @Override public CredentialsProvider credentials(RocketMqSettings settings) { return settings.credentials(); }
 
+  @Override
+  public CredentialsProvider credentials(RocketMqSettings settings) {
+    return settings.credentials();
+  }
 }
