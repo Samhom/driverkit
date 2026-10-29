@@ -7,12 +7,18 @@ public final class ConfigSnapshot<S> {
   private final ResourceId resource;
   private final long revision;
   private final S settings;
+  private final SettingsSchema<S> schema;
 
   public ConfigSnapshot(ResourceId resource, long revision, S settings) {
+    this(resource, revision, settings, SettingsSchema.inferred(settings));
+  }
+
+  public ConfigSnapshot(ResourceId resource, long revision, S settings, SettingsSchema<S> schema) {
     if (revision < 1) throw new IllegalArgumentException("Revision must be positive");
     this.resource = Objects.requireNonNull(resource, "resource");
     this.revision = revision;
-    this.settings = Objects.requireNonNull(settings, "settings");
+    this.schema = Objects.requireNonNull(schema, "schema");
+    this.settings = schema.copy(Objects.requireNonNull(settings, "settings"));
   }
 
   public ResourceId resource() {
@@ -24,7 +30,20 @@ public final class ConfigSnapshot<S> {
   }
 
   public S settings() {
-    return settings;
+    return schema.copy(settings);
+  }
+
+  public String schemaId() {
+    return schema.id();
+  }
+
+  public int schemaVersion() {
+    return schema.version();
+  }
+
+  /** Preserve normalization and defensive-copy rules when changing a revision. */
+  public ConfigSnapshot<S> withRevision(long revision) {
+    return new ConfigSnapshot<>(resource, revision, settings, schema);
   }
 
   @Override

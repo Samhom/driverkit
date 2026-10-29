@@ -66,3 +66,9 @@ Pipeline、事务、Pub/Sub、PIT/Scroll 和流式结果应固定客户端代际
 双写需要定义主写结果、镜像失败、修复持久化与重放顺序。进程内有界队列不能承担可靠修复日志。跨资源切换也不提供数据迁移事务。
 
 SDK 的并发上限和 deadline 不能替代服务端事务、唯一约束、消费幂等与资源授权。
+
+## 配置 Schema 与不可变性
+
+三参数 ConfigSnapshot 只接受 SDK 明确支持的不可变值，或显式实现 ImmutableSettings 的配置类型；不能仅因类型是 record 就假设其成员不可变。自定义可变 DTO 使用四参数构造器，传入 SettingsSchema.copying(id, schemaVersion, type, deepCopy, validator)。构造、读取及 withRevision 都执行复制与校验，外部修改不影响已发布快照。拷贝函数必须递归复制数组、集合和可变成员，并可并发调用；SDK 不采用反射或反序列化猜测复制规则。
+
+内置 Redis/ES/Couchbase/RocketMQ/gRPC 配置显式实现不可变契约并沿用构造器字段约束。CredentialsProvider 是受信任的外部能力引用，允许轮换，不属于被快照复制的秘密材料。Schema 版本与单调发布 revision 独立；Schema 升级和有损转换由配置解码端显式处理。

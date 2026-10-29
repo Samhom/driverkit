@@ -11,7 +11,8 @@ public record RedisSettings(
     Duration readTimeout,
     int maxConnections,
     int database,
-    int maxValueBytes) {
+    int maxValueBytes)
+    implements ImmutableSettings {
   public RedisSettings {
     Objects.requireNonNull(endpoint);
     Objects.requireNonNull(credentials);

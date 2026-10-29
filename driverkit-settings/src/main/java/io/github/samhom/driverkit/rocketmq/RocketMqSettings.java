@@ -11,7 +11,8 @@ public record RocketMqSettings(
     String topic,
     Duration requestTimeout,
     int consumerThreads,
-    int maxMessageBytes) {
+    int maxMessageBytes)
+    implements ImmutableSettings {
   public RocketMqSettings {
     Objects.requireNonNull(nameServer);
     Objects.requireNonNull(credentials);

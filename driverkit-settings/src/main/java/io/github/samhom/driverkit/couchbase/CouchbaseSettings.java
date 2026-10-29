@@ -12,7 +12,8 @@ public record CouchbaseSettings(
     String collection,
     Duration connectTimeout,
     Duration operationTimeout,
-    int maxDocumentBytes) {
+    int maxDocumentBytes)
+    implements ImmutableSettings {
   public CouchbaseSettings {
     Objects.requireNonNull(endpoint);
     Objects.requireNonNull(credentials);

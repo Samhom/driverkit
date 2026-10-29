@@ -9,7 +9,8 @@ public record GrpcSettings(
     CredentialsProvider credentials,
     String topic,
     Duration requestTimeout,
-    int maxMessageBytes) {
+    int maxMessageBytes)
+    implements ImmutableSettings {
   public GrpcSettings {
     Objects.requireNonNull(proxy);
     Objects.requireNonNull(credentials);

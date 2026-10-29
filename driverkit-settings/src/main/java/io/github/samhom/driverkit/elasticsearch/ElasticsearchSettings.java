@@ -11,7 +11,8 @@ public record ElasticsearchSettings(
     Duration readTimeout,
     int maxConnections,
     int maxBatchItems,
-    int maxDocumentBytes) {
+    int maxDocumentBytes)
+    implements ImmutableSettings {
   public ElasticsearchSettings {
     Objects.requireNonNull(endpoint);
     Objects.requireNonNull(credentials);
