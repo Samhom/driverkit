@@ -25,7 +25,9 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
   private final AtomicBoolean scheduled = new AtomicBoolean();
   private final AtomicBoolean revoked = new AtomicBoolean();
   private volatile State state = State.DRAINING;
-  private ConfigSnapshot<S> current;
+  private volatile ConfigSnapshot<S> current;
+  private final ConfigurationTracker configuration = new ConfigurationTracker();
+  private volatile ConfigurationTracker.Attempt configurationAttempt;
   private long attempted;
   private C consumer;
   private int active;
@@ -119,11 +121,14 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
             },
             new ThreadPoolExecutor.AbortPolicy());
     updates.allowCoreThreadTimeOut(true);
+    configurationAttempt = configuration.begin(initial.revision());
     try {
       ownership = initialize(initial.settings());
       consumer = ownership.awaitReady();
       state = State.RUNNING;
+      configuration.finish(configurationAttempt, current.revision(), null);
     } catch (Exception e) {
+      configuration.finish(configurationAttempt, current.revision(), e);
       updates.shutdownNow();
       lifecycleWork.stopInitializing();
       state = State.FAILED;
@@ -161,8 +166,11 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
             adapter.close(value, remaining);
           }
         };
-    return lifecycleWork.initialize(
-        bridge, settings, policy.warmupTimeout(), policy.shutdownTimeout());
+    LifecycleCoordinator.Owned<C> owned =
+        lifecycleWork.initialize(
+            bridge, settings, policy.warmupTimeout(), policy.shutdownTimeout());
+    configurationAttempt.follow(owned::phase);
+    return owned;
   }
 
   private void control(boolean pause) {
@@ -198,24 +206,70 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
     }
   }
 
+  public ConfigurationStatus configurationStatus() {
+    return configuration.snapshot(current.revision(), state == State.CLOSED, revoked.get());
+  }
+
+  public java.util.List<ConfigurationStatus> configurationHistory() {
+    return configuration.history();
+  }
+
+  public UpdateResult apply(ConfigurationRelease<S> release, String instanceId) {
+    if (!resource.equals(release.snapshot().resource()))
+      throw new IllegalArgumentException("Configuration scope mismatch");
+    if (!release.targets(instanceId)) return UpdateResult.NOT_TARGETED;
+    return reload(release.snapshot(), release.expectedRevision());
+  }
+
   public UpdateResult reload(ConfigSnapshot<S> next) {
+    return reload(next, null);
+  }
+
+  public UpdateResult reload(ConfigSnapshot<S> next, long expectedRevision) {
+    if (expectedRevision < 1) throw new IllegalArgumentException("Invalid expected revision");
+    return reload(next, Long.valueOf(expectedRevision));
+  }
+
+  private UpdateResult reload(ConfigSnapshot<S> next, Long expectedRevision) {
+    Objects.requireNonNull(next);
+    if (!resource.equals(next.resource()))
+      throw new IllegalArgumentException("Configuration scope mismatch");
+    synchronized (lifecycle) {
+      configuration.observe(next.revision());
+      if (next.revision() <= attempted) return UpdateResult.STALE;
+      configurationAttempt = configuration.begin(next.revision());
+      attempted = next.revision();
+      try {
+        if (expectedRevision != null && current.revision() != expectedRevision)
+          throw new ClientException(
+              ClientException.Kind.UPDATE_REJECTED, "Effective configuration revision conflict");
+        UpdateResult result = reloadInternal(next);
+        configuration.finish(configurationAttempt, current.revision(), null);
+        return result;
+      } catch (RuntimeException | Error error) {
+        configuration.finish(configurationAttempt, current.revision(), error);
+        throw error;
+      }
+    }
+  }
+
+  private UpdateResult reloadInternal(ConfigSnapshot<S> next) {
     if (!resource.equals(next.resource()))
       throw new IllegalArgumentException("Configuration scope mismatch");
     synchronized (lifecycle) {
       if (stopping.get() || revoked.get() || state == State.CLOSED || state == State.REVOKED)
         throw new ClientException(ClientException.Kind.CLOSED, "Consumer admission is closed");
-      if (next.revision() <= attempted) return UpdateResult.STALE;
       adapter.validate(next.settings());
       adapter.validateUpdate(current.settings(), next.settings());
       adapter.updatePlan(current.settings(), next.settings()).requireAllowed();
       if (!current.schemaId().equals(next.schemaId())
           || current.schemaVersion() != next.schemaVersion())
         throw new IllegalArgumentException("Online schema changes require a new resource binding");
-      attempted = next.revision();
       if (state != State.RUNNING)
         throw new ClientException(
             ClientException.Kind.UPDATE_REJECTED, "Consumer requires explicit recovery");
       state = State.DRAINING;
+      configurationAttempt.phase(ConfigurationStatus.Phase.DRAIN);
       try {
         long drainDeadline = System.nanoTime() + policy.shutdownTimeout().toNanos();
         control(true);
@@ -241,6 +295,7 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
           state = State.RUNNING;
           return UpdateResult.APPLIED;
         } catch (Exception replacementFailure) {
+          configurationAttempt.failedPhase = configurationAttempt.phase();
           ownership.retire(System.nanoTime() + policy.shutdownTimeout().toNanos(), null);
           if (stopping.get() || revoked.get()) {
             state = revoked.get() ? State.REVOKED : State.CLOSED;
@@ -295,6 +350,7 @@ public final class ExclusiveConsumer<C, S> implements AutoCloseable {
               snapshot -> {
                 if (!resource.equals(snapshot.resource()))
                   throw new IllegalArgumentException("Configuration scope mismatch");
+                configuration.observe(snapshot.revision());
                 pending.accumulateAndGet(
                     snapshot,
                     (old, value) -> old == null || value.revision() > old.revision() ? value : old);

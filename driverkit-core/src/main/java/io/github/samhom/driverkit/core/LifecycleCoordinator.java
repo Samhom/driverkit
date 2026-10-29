@@ -120,6 +120,12 @@ final class LifecycleCoordinator {
   }
 
   final class Owned<C> {
+    private volatile ConfigurationStatus.Phase phase = ConfigurationStatus.Phase.QUEUED;
+
+    ConfigurationStatus.Phase phase() {
+      return phase;
+    }
+
     private final Creator<C> creator;
     private final Phase<C> warmup, closer;
     private final long initializationDeadline;
@@ -136,7 +142,9 @@ final class LifecycleCoordinator {
     <S> Owned(DriverAdapter<C, S> adapter, S settings, Duration timeout, Duration shutdownTimeout) {
       this.creator =
           remaining -> {
+            phase = ConfigurationStatus.Phase.VALIDATION;
             adapter.validate(settings);
+            phase = ConfigurationStatus.Phase.CREATE;
             return adapter.create(settings, remainingInitialization());
           };
       this.warmup = (client, remaining) -> adapter.warmup(client, settings, remaining);
@@ -205,9 +213,11 @@ final class LifecycleCoordinator {
         synchronized (this) {
           client = value;
         }
+        phase = ConfigurationStatus.Phase.WARMUP;
         warmup.run(value, remainingInitialization());
         synchronized (this) {
           remainingInitialization();
+          phase = ConfigurationStatus.Phase.PUBLISH;
           ready.complete(value);
         }
       } catch (Throwable error) {

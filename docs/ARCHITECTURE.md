@@ -130,3 +130,9 @@ Couchbase 代际发布前还须确认配置中的目标 Bucket 已就绪。setti
 | gRPC 实验模块 | 无 | proxy、credentials、requestTimeout、maxMessageBytes | topic |
 
 门面构造器中的超时、批量及字节参数始终是实例级硬上限，在线配置不能突破它们；降低当前配置会收紧后续调用。核心在计时、排队和原生调用前取 Operation 超时与当前代际 operationTimeout 的较小值，包含排队时间。原生会话自定义操作仍须自行应用预算。消费者通过排空与重启实施配置变更，不声称消费参数可热修改。FactoryAdapter 默认保守重建；自定义 DriverAdapter 可显式覆盖 updatePlan。
+
+## 配置发布状态与灰度
+
+客户端及独占消费者暴露 `configurationStatus()` 和最近 64 条 `configurationHistory()`。记录 desired/attempted/effective revision、校验/创建/预热/排空/发布阶段、失败阶段、固定失败类别和单调时钟耗时；不保存配置值、秘密、Throwable 或异常文本。初始化/预热过程中可读取状态，失败保留旧生效版本。校验失败也消耗 attempted revision，修复或回滚必须使用更高 revision；BUSY 不消耗版本，手动调用者需重试，绑定的配置源会合并等待。历史为本进程有界诊断记录，持久审计及发布操作者身份由可信控制平台负责。
+
+`reload(snapshot, expectedRevision)` 在同一发布锁内比较生效版本，避免并发发布覆盖；错误不会覆盖现有代际。`ConfigurationRelease` 携带单调快照、期望版本、发布分组和 0–100 百分比，以 SHA-256 稳定选取实例，扩大同组百分比保留已有灰度对象。`apply(release, instanceId)` 未命中返回 NOT_TARGETED；PushConfigurationSource 亦提供带 release 的 CAS 发布入口。instanceId 来自受信任服务配置，灰度不是认证或跨资源授权机制，配置源仍应在可信平台完成审批与权限校验。Apollo 继续使用单文档及统一 revision，不静默覆盖失败状态。

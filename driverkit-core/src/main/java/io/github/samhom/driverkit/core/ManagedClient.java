@@ -28,6 +28,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       new ConcurrentHashMap<>();
   private Generation active;
   private Generation retiring;
+  private final ConfigurationTracker configuration = new ConfigurationTracker();
   private long attemptedRevision;
   private long rejectedUpdates;
   private int inFlight;
@@ -66,11 +67,13 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     this.policy = policy;
     this.observer = observer;
     this.resource = initial.resource();
-    active = create(initial);
+    ConfigurationTracker.Attempt attempt = configuration.begin(initial.revision());
+    active = create(initial, attempt);
     attemptedRevision = initial.revision();
+    configuration.finish(attempt, initial.revision(), null);
   }
 
-  private Generation create(ConfigSnapshot<S> snapshot) {
+  private Generation create(ConfigSnapshot<S> snapshot, ConfigurationTracker.Attempt attempt) {
     LifecycleCoordinator.Owned<C> ownership;
     try {
       ownership =
@@ -80,6 +83,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
       resourceFinished(null);
       throw failure;
     }
+    attempt.follow(ownership::phase);
     ownership.whenClosed(this::resourceFinished);
     return new Generation(snapshot, ownership.awaitReady(), ownership);
   }
@@ -206,58 +210,93 @@ public final class ManagedClient<C, S> implements AutoCloseable {
     return adapter.updatePlan(previous, snapshot.settings());
   }
 
+  public ConfigurationStatus configurationStatus() {
+    synchronized (state) {
+      return configuration.snapshot(active.snapshot.revision(), closed, revoked);
+    }
+  }
+
+  public java.util.List<ConfigurationStatus> configurationHistory() {
+    return configuration.history();
+  }
+
+  public UpdateResult apply(ConfigurationRelease<S> release, String instanceId) {
+    Objects.requireNonNull(release);
+    if (!resource.equals(release.snapshot().resource()))
+      throw new IllegalArgumentException("Configuration resource scope mismatch");
+    if (!release.targets(instanceId)) return UpdateResult.NOT_TARGETED;
+    return reload(release.snapshot(), release.expectedRevision());
+  }
+
   public UpdateResult reload(ConfigSnapshot<S> snapshot) {
+    return reload(snapshot, null);
+  }
+
+  public UpdateResult reload(ConfigSnapshot<S> snapshot, long expectedRevision) {
+    if (expectedRevision < 1) throw new IllegalArgumentException("Invalid expected revision");
+    return reload(snapshot, Long.valueOf(expectedRevision));
+  }
+
+  private UpdateResult reload(ConfigSnapshot<S> snapshot, Long expectedRevision) {
     Objects.requireNonNull(snapshot, "snapshot");
     if (!resource.equals(snapshot.resource()))
       throw new IllegalArgumentException("Configuration resource scope mismatch");
     synchronized (updateLock) {
-      S previousSettings;
+      ConfigSnapshot<S> previous;
+      ConfigurationTracker.Attempt attempt;
       synchronized (state) {
         ensureOpen();
+        configuration.observe(snapshot.revision());
         if (snapshot.revision() <= attemptedRevision) return UpdateResult.STALE;
         if (retiring != null) return UpdateResult.BUSY;
-        previousSettings = active.snapshot.settings();
+        previous = active.snapshot;
+        attemptedRevision = snapshot.revision();
+        attempt = configuration.begin(snapshot.revision());
       }
-      // Validation is adapter code; it must not block close() or registry retirement's state lock.
-      adapter.validate(snapshot.settings());
-      adapter.validateUpdate(previousSettings, snapshot.settings());
-      UpdatePlan plan = adapter.updatePlan(previousSettings, snapshot.settings());
-      plan.requireAllowed();
-      synchronized (state) {
-        ensureOpen();
-        if (!active.snapshot.schemaId().equals(snapshot.schemaId())
-            || active.snapshot.schemaVersion() != snapshot.schemaVersion())
+      try {
+        if (expectedRevision != null && previous.revision() != expectedRevision)
+          throw new ClientException(
+              ClientException.Kind.UPDATE_REJECTED, "Effective configuration revision conflict");
+        if (!previous.schemaId().equals(snapshot.schemaId())
+            || previous.schemaVersion() != snapshot.schemaVersion())
           throw new IllegalArgumentException(
               "Online schema changes require a new resource binding");
-        attemptedRevision = snapshot.revision();
-        if (plan.effect() == UpdatePlan.Effect.LIVE) {
-          active.snapshot = snapshot;
+        adapter.validate(snapshot.settings());
+        adapter.validateUpdate(previous.settings(), snapshot.settings());
+        UpdatePlan plan = adapter.updatePlan(previous.settings(), snapshot.settings());
+        plan.requireAllowed();
+        synchronized (state) {
+          ensureOpen();
+          if (plan.effect() == UpdatePlan.Effect.LIVE) {
+            active.snapshot = snapshot;
+            configuration.finish(attempt, snapshot.revision(), null);
+            return UpdateResult.APPLIED;
+          }
+          ownedResources++;
+        }
+        Generation candidate = create(snapshot, attempt);
+        synchronized (state) {
+          attempt.phase(ConfigurationStatus.Phase.PUBLISH);
+          if (closed || revoked) {
+            candidate.retired = true;
+            scheduleDisposal(candidate);
+            throw new ClientException(
+                ClientException.Kind.UPDATE_REJECTED, "Client no longer accepts updates");
+          }
+          Generation old = active;
+          active = candidate;
+          old.retired = true;
+          retiring = old;
+          if (old.references == 0) scheduleDisposal(old);
+          configuration.finish(attempt, snapshot.revision(), null);
           return UpdateResult.APPLIED;
         }
-        ownedResources++;
-      }
-      Generation candidate;
-      try {
-        candidate = create(snapshot);
-      } catch (RuntimeException error) {
+      } catch (RuntimeException | Error error) {
         synchronized (state) {
           rejectedUpdates++;
+          configuration.finish(attempt, active.snapshot.revision(), error);
         }
         throw error;
-      }
-      synchronized (state) {
-        if (closed || revoked) {
-          candidate.retired = true;
-          scheduleDisposal(candidate);
-          throw new ClientException(
-              ClientException.Kind.UPDATE_REJECTED, "Client no longer accepts updates");
-        }
-        Generation previous = active;
-        active = candidate;
-        previous.retired = true;
-        retiring = previous;
-        if (previous.references == 0) scheduleDisposal(previous);
-        return UpdateResult.APPLIED;
       }
     }
   }
@@ -308,6 +347,7 @@ public final class ManagedClient<C, S> implements AutoCloseable {
   private void enqueue(ConfigSnapshot<S> snapshot) {
     if (!resource.equals(snapshot.resource()))
       throw new IllegalArgumentException("Configuration resource scope mismatch");
+    configuration.observe(snapshot.revision());
     pending.accumulateAndGet(
         snapshot, (old, next) -> old == null || next.revision() > old.revision() ? next : old);
     schedulePending();

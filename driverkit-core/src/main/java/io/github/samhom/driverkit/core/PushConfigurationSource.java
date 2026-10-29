@@ -34,6 +34,16 @@ public final class PushConfigurationSource<S> implements ConfigurationSource<S> 
     };
   }
 
+  public synchronized boolean publish(ConfigurationRelease<S> release, String instanceId) {
+    Objects.requireNonNull(release);
+    if (!current.resource().equals(release.snapshot().resource()))
+      throw new IllegalArgumentException("Resource scope mismatch");
+    if (!release.targets(instanceId)) return false;
+    if (current.revision() != release.expectedRevision())
+      throw new ClientException(ClientException.Kind.UPDATE_REJECTED, "Source revision conflict");
+    return publish(release.snapshot());
+  }
+
   public synchronized boolean publish(ConfigSnapshot<S> snapshot) {
     Objects.requireNonNull(snapshot, "snapshot");
     if (!current.resource().equals(snapshot.resource()))
